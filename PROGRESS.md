@@ -3,91 +3,127 @@
 ## Status Overview
 - **Core Architecture:** Phases 1 to 5 built, hardened, and verified.
 - **Audit & Security Hardening:** Complete implementation of all audit fixes, negative security tests, and role boundaries.
+- **Officer Jurisdiction & Ward Isolation:** String-compared ward isolation with strict rejection of officers without assigned wards and complaints without ward routing.
+- **Citizen Dashboard ("My Complaints"):** Dedicated `/my-complaints` page and `GET /api/complaints/my` endpoint surfacing all user-reported tickets, with explicit "Waiting for routing" badges for unrouted issues.
 - **Admin Control Center & Notifications:** Full `/admin` dashboard deployed (officer allow-list, triage queue, dispute arbitration, invalidation) and multi-channel notifications system (in-app + Nodemailer) with automated 72h reminders.
-- **Verification Summary:** All 18 integration and audit tests (`npm run test:fixes`), spatial tests (`npm run test:spatial`), and end-to-end tests (`npm run test:e2e`) pass cleanly. Next.js production build and linting complete with 0 errors.
+- **Verification Summary:** All 19 integration and audit tests (`npm run test:fixes`), spatial tests (`npm run test:spatial`), and end-to-end tests (`npm run test:e2e`) pass cleanly. Next.js production build and linting complete with 0 errors.
 
 ---
 
-## Architectural Hardening & Remediation Details
+## Architectural Hardening & Implementation Details
 
-### 1. Cloudinary Asset Size, Format Checks & Transformation Stripping
-- **Authoritative Asset HEAD Check:** `verifyCloudinaryAssetSize(url)` strips any transformation parameters from the Cloudinary delivery URL using `getOriginalCloudinaryUrl(url)`:
-  - Example: `https://res.cloudinary.com/cloud/image/upload/w_800,c_fill,q_auto/v12345/jaago_complaints/sample.jpg` is stripped to `https://res.cloudinary.com/cloud/image/upload/v12345/jaago_complaints/sample.jpg` so that the HEAD request interrogates the raw uploaded asset rather than an on-the-fly resized derivative.
-- **HEAD Rejection Rules:**
-  - If the HTTP `HEAD` request fails (non-2xx response or network failure), the upload is rejected.
-  - If the `Content-Length` header is missing, the upload is rejected.
-  - If `Content-Length` exceeds 5MB (`5 * 1024 * 1024` bytes), the upload is rejected.
-- **Upload API Parameter Alignment:** The signing route `app/api/uploads/sign/route.ts` specifies `allowed_formats: 'jpg,jpeg,png,webp'` in snake_case, sorted alphabetically in the signature string (`allowed_formats=...&folder=...&timestamp=...`), and `lib/cloudinaryClient.ts` appends `allowed_formats` to `FormData` when executing the direct upload to `https://api.cloudinary.com/v1_1/<cloud>/image/upload`.
-- **Mock HEAD Testing:** Integration test suite mocks the HEAD path verifying 404 failure, missing Content-Length, oversized Content-Length, and proper transformation URL stripping.
+### 1. Enforcement of the 5MB Asset Limit
+The 5MB image proof limit is strictly enforced in two distinct layers:
 
-### 2. Negative Authorization Tests & Officer Ward Isolation
-- **Comprehensive Admin 401 & 403 Enforcement:** Every `/api/admin/*` endpoint was tested and verified:
-  - Anonymous callers (no session/credentials) receive HTTP `401 Unauthorized`.
-  - Authenticated callers with `citizen` or `officer` role receive HTTP `403 Forbidden`.
-  - Covers all 9 admin endpoints:
-    1. `GET /api/admin/officers`
-    2. `POST /api/admin/officers`
-    3. `PATCH /api/admin/officers/[id]`
-    4. `GET /api/admin/triage`
-    5. `PATCH /api/admin/complaints/[id]/assign`
-    6. `GET /api/admin/disputes`
-    7. `PATCH /api/admin/complaints/[id]/arbitrate`
-    8. `PATCH /api/admin/complaints/[id]/reject`
-    9. `GET /api/admin/metadata`
-- **Officer Ward Jurisdiction Guard:**
-  - In `app/api/complaints/[id]/resolve/route.ts` and `app/api/complaints/[id]/status/route.ts`, if caller is an officer, `officer.assignedWardId` must match `complaint.wardId`.
-  - Officers attempting to resolve or change the status of complaints outside their assigned ward jurisdiction are blocked with HTTP `403 Forbidden`.
+1. **Client-Side File Upload Guard (`lib/cloudinaryClient.ts` L11-L14):**
+   - Before any network request or upload signature is requested, `uploadToCloudinary(file)` checks the native browser `File.size`:
+     ```typescript
+     const maxBytes = 5 * 1024 * 1024; // 5MB limit
+     if (file.size > maxBytes) {
+       throw new Error('File exceeds the strict 5MB limit. Please upload an image under 5MB.');
+     }
+     ```
+   - Any oversized file is rejected instantly on the client without consuming server or Cloudinary bandwidth.
 
-### 3. Idempotent 72-Hour Verification Reminder
-- **Schema Update:** Added `reminderSentAt?: Date` to `models/Complaint.ts` (with an index).
-- **Single Dispatch Guarantee:**
-  - The cron auto-close handler (`app/api/cron/auto-close/route.ts`) queries complaints in `Pending Verification` with `verificationDeadline` $\le 48\text{h}$ from now and `reminderSentAt: { $in: [null, undefined] }`.
-  - When the reminder is dispatched, `complaint.reminderSentAt = now` is committed to the database.
-  - Subsequent cron executions detect `reminderSentAt` and skip dispatching duplicate reminders.
-  - Reset on Re-resolution: If a ticket is reopened and subsequently re-resolved by an officer, `reminderSentAt` is cleared so that the new resolution audit cycle receives its reminder.
+2. **Server-Side Ingest Verifier (`lib/validations.ts` L58-L98 via `verifyCloudinaryAssetSize`):**
+   - For Cloudinary delivery URLs: strips on-the-fly transformations using `getOriginalCloudinaryUrl(url)` and issues an authoritative HTTP `HEAD` request to `res.cloudinary.com`.
+   - Inspects the `Content-Length` header returned directly by Cloudinary's storage:
+     - If the `HEAD` request fails (non-2xx response or network failure), the upload is rejected.
+     - If the `Content-Length` header is missing, the upload is rejected.
+     - If `Content-Length` exceeds 5MB (`5 * 1024 * 1024` bytes) or is $\le 0$, the upload is rejected.
+   - Enforced across all image submission entry points:
+     - `POST /api/complaints` (Complaint creation image)
+     - `PATCH /api/complaints/[id]/resolve` (Field officer resolution proof photo)
+     - `POST /api/complaints/[id]/verify` (Citizen contest proof photo)
+   - For base64 data URIs (permitted strictly when `NODE_ENV === 'test'`), decoded byte length (`Math.ceil((base64Data.length * 3) / 4)`) is calculated and verified to be $\le 5\text{MB}$.
 
-### 4. Unrouted Complaints Isolation (Admin Triage Only)
-- **Public & Officer Filtering:**
-  - In `app/api/complaints/route.ts` (GET), requests without a specific `wardId` parameter default to `{ wardId: { $ne: null, $exists: true } }`. Unrouted complaints with no ward are never leaked in public lists.
-  - In `app/explore/page.tsx` and `components/CivicLeafletMap.tsx`, complaints without a `wardId` are filtered out and never plotted on the public GIS map.
-  - In `app/officer/dashboard/page.tsx`, complaints without a `wardId` are filtered out.
-  - In `lib/leaderboard.ts`, only complaints with a valid `wardId` are aggregated.
-- **Admin Triage Queue:**
-  - `GET /api/admin/triage` specifically queries `$or: [{ wardId: null }, { agencyId: null }, ...]` to surface unrouted tickets for manual municipal assignment.
+3. **Cloudinary Upload API Parameter Compliance (`app/api/uploads/sign/route.ts` & `lib/cloudinaryClient.ts`):**
+   - Parameters not supported by Cloudinary's upload API (such as `maxFileSizeBytes`) were removed from signature computation and `FormData`.
+   - The signed string contains strictly supported parameters in alphabetical order: `allowed_formats=jpg,jpeg,png,webp&folder=jaago_complaints&timestamp=<unix_time>`.
 
-### 5. Civic Trust Index (CTI) Refinements & Sample Thresholds
-- **Closed Tickets as Authoritative Denominators:**
-  - Denominator: `closedCount = complaints.filter(c => ['Resolved - Citizen Verified', 'Resolved - Auto Closed'].includes(c.status)).length`.
-  - Participation Rate: `(citizenVerifiedCount / closedCount) * 100`.
-  - Reopen Rate: `reopenedClosedTickets / closedCount`.
-  - SLA Compliance Rate: `slaCompliantClosedTickets / closedCount`.
-- **Minimum Statistical Threshold ($\ge 10$ Closed Tickets):**
-  - Wards with fewer than 10 closed complaints are marked `hasEnoughData: false`, with `ctiScore: null` and `rank: null`.
-  - In `app/leaderboard/page.tsx`, these wards display a clear **"Not enough data"** badge and sample size notice (e.g. `5 (< 10 min)`), preventing skewed rankings or `NaN` values.
-  - Ranked wards ($\ge 10$ closed tickets) receive numeric ranks (`#1`, `#2`, etc.) sorted descending by `ctiScore`.
-- **Transparent Metric Breakdown:**
-  - Public leaderboard displays sample size (`closedCount`), participation rate, citizen-verified count, and auto-closed count separately.
-- **Edge Case Unit & Integration Tests:**
-  - Zero-ticket ward: `closedCount=0`, `hasEnoughData=false`, `ctiScore=null`, no `NaN`.
-  - Small-sample ward: `closedCount=5`, `hasEnoughData=false`, `participationRate=80%`.
-  - Large-sample ward: `closedCount=12`, `hasEnoughData=true`, `ctiScore=87`, ranked `#1`.
+---
 
-### 6. First Admin Creation Integrity
-- **Restricted Elevation:** In `lib/auth.ts`, user auto-provisioning via Credentials or OAuth defaults strictly to `role: 'citizen'`. Upgrades to `role: 'officer'` occur only if the email is on the active `OfficerAllowList`.
-- **Public Sign-Up Protection:** No public sign-up or registration path can grant or request `role: 'admin'`.
-- **Admin Ingress:**
-  - Seeded Admin: Created via `scripts/seedPilot.ts` (`admin@demo.jaago.app` with `role: 'admin'`).
-  - Environment Variable Ingress: If `process.env.ADMIN_EMAIL` is explicitly set, an account registered with that exact configured email receives `role: 'admin'`.
+### 2. Officer Jurisdiction & Ward Boundary Guards
+Field officer privileges are strictly restricted by ward assignment in [`app/api/complaints/[id]/resolve/route.ts`](file:///C:/Users/91701/OneDrive/Desktop/JAAGO/app/api/complaints/[id]/resolve/route.ts) and [`app/api/complaints/[id]/status/route.ts`](file:///C:/Users/91701/OneDrive/Desktop/JAAGO/app/api/complaints/[id]/status/route.ts):
+
+- **Deny Officers with No Assigned Ward:**
+  If `officer.role === 'officer'` and `!officer.assignedWardId`, the request is rejected with HTTP `403 Forbidden`:
+  `"Forbidden: Officer has no assigned ward jurisdiction."`
+- **Deny Action on Complaints with No Ward:**
+  If `officer.role === 'officer'` and `!complaint.wardId`, the request is rejected with HTTP `403 Forbidden`:
+  `"Forbidden: Officer action not permitted on unrouted complaint with no ward assignment."`
+- **String ID Comparison:**
+  Ward IDs are compared as primitive strings:
+  `if (String(officer.assignedWardId) !== String(complaint.wardId))` &rarr; returns HTTP `403 Forbidden`:
+  `"Forbidden: Officers are restricted to complaints within their assigned ward jurisdiction."`
+
+---
+
+### 3. "My Complaints" Citizen Dashboard & API
+- **API (`GET /api/complaints/my`):**
+  - Authenticated via `requireAuth(req)`.
+  - Queries `{ reportedBy: user.id }` without ward filtering, ensuring the logged-in citizen always sees all their filed complaints, including unrouted issues.
+  - Adds `routingStatus: c.wardId ? 'Routed' : 'Waiting for routing'` to each complaint record.
+  - Returns HTTP `401` for anonymous callers.
+- **User Interface (`app/my-complaints/page.tsx`):**
+  - Displays summary metrics: Total Filed, In Verification, Resolved, and Waiting for Routing.
+  - Tickets with no `wardId` feature an amber **"Waiting for routing"** badge (`<Clock /> Waiting for routing`).
+  - Routed tickets display ward code (`W-150`, etc.) and assigned agency.
+  - Integrated into [`components/Navbar.tsx`](file:///C:/Users/91701/OneDrive/Desktop/JAAGO/components/Navbar.tsx) navigation when logged in.
+
+---
+
+### 4. Civic Trust Index (CTI): Precise Mathematical Specification
+
+The Civic Trust Index (CTI) is a 0 to 100 municipal accountability score computed per ward:
+$$\text{CTI} = \text{round}\Big(100 \times \big[0.4 \times \text{CitizenVerifiedRate} + 0.4 \times \max(0, 1 - \text{ReopenRate}) + 0.2 \times \text{SLAComplianceRate}\big]\Big)$$
+
+#### Universal Denominator: Closed Complaints (`closedCount`)
+- **Definition:** The denominator for all rates is the total number of closed complaints in the ward:
+  $$\text{closedCount} = \sum [\text{status} \in \{\text{'Resolved - Citizen Verified'}, \text{'Resolved - Auto Closed'}\}]$$
+- **Statistical Significance Threshold ($\ge 10$):**
+  - Wards with $\text{closedCount} < 10$ (including zero-ticket wards) are assigned `hasEnoughData: false`, `ctiScore: null`, and `rank: null`.
+  - In the leaderboard UI, these wards display a clear **"Not enough data"** badge with sample size (e.g. `5 (< 10 min)`), preventing division-by-zero or skewed rankings.
+- **Excluded Tickets:**
+  - Active open tickets (`Pending`, `In Progress`, `Pending Verification`) and rejected invalid tickets (`Rejected - Invalid`) are excluded from the closed denominator.
+  - Unrouted tickets with no `wardId` are excluded from all ward calculations and handled strictly in admin triage.
+
+#### Numerators & Components
+1. **Citizen Verified Rate (`CitizenVerifiedRate`):**
+   - **Numerator:** Count of closed complaints where the citizen actively reviewed and confirmed resolution:
+     $$\text{citizenVerifiedCount} = \sum [\text{status} = \text{'Resolved - Citizen Verified'}]$$
+   - **Denominator:** $\text{closedCount}$
+   - $\text{CitizenVerifiedRate} = \frac{\text{citizenVerifiedCount}}{\text{closedCount}}$
+
+2. **Reopen Rate (`ReopenRate`) & How Reopened Complaints Count:**
+   - **How Reopened Complaints Count:** A complaint counts in the reopen numerator if a citizen contested the resolution at least once during its lifecycle ($\text{reopenCount} > 0$), and the complaint subsequently reached a closed resolution (`Resolved - Citizen Verified` or `Resolved - Auto Closed`).
+   - **Numerator:** Count of closed complaints in the ward with $\text{reopenCount} > 0$:
+     $$\text{reopenedClosedCount} = \sum_{\text{closed}} [(\text{c.reopenCount} || 0) > 0]$$
+   - **Denominator:** $\text{closedCount}$
+   - $\text{ReopenRate} = \frac{\text{reopenedClosedCount}}{\text{closedCount}}$
+   - **Penalty Effect:** Enters the formula as $0.4 \times (1 - \text{ReopenRate})$. Higher reopen rates directly penalize the ward's trust score. Complaints currently in dispute (`Reopened - Escalated`, `Disputed - Admin Review`) do not count until closed; once resolved and audited, they enter the closed denominator and contribute to the reopen penalty.
+
+3. **SLA Compliance Rate (`SLAComplianceRate`):**
+   - **Numerator:** Count of closed complaints whose resolution duration was within the 72-hour benchmark:
+     $$\text{durationHours} = \frac{\text{resolveTimestamp} - \text{createdAt}}{3600 \times 1000} \le 72$$
+     $$\text{slaCompliantCount} = \sum_{\text{closed}} [\text{durationHours} \le 72]$$
+   - **Denominator:** $\text{closedCount}$
+   - $\text{SLAComplianceRate} = \frac{\text{slaCompliantCount}}{\text{closedCount}}$
+
+4. **Participation Rate & Auto-Closed Rate:**
+   - $\text{ParticipationRate} = \frac{\text{citizenVerifiedCount}}{\text{closedCount}} \times 100\%$
+   - $\text{AutoClosedRate} = \frac{\text{autoClosedCount}}{\text{closedCount}} \times 100\%$
+   - Note: $\text{citizenVerifiedCount} + \text{autoClosedCount} = \text{closedCount}$.
 
 ---
 
 ## Test & Build Verification Results
 
-- `npm run test:fixes`: **PASS (18 / 18 passed)**
+- `npm run test:fixes`: **PASS (19 / 19 passed)**
   1. Real `POST /api/uploads/sign` Cloudinary signature parameters & dev/prod error gating
   2. `imageProofSchema` strict HTTPS Cloudinary URLs & test-only base64 gating
   3. Server-side asset size check with mocked HEAD paths (404 rejection, missing header, oversized asset, transformation stripping)
-  4. GPS accuracy quality gate (accuracy $> 50\text{m}$ rejected with retry-in-open guidance; $\le 50\text{m}$ accepted)
+  4. GPS accuracy quality gate (accuracy $> 50\text{m}$ rejected; $\le 50\text{m}$ accepted)
   5. Real `POST /api/complaints` duplicate re-check (409 Conflict vs 201 Created with `confirmDistinct`)
   6. `CRON_SECRET` header authorization on `POST /api/cron/auto-close`
   7. Credentials login provider dynamically gated by `DEMO_AUTH=true`
@@ -98,21 +134,12 @@
   12. Admin Complaint invalidation with required reason (appends to `statusHistory`)
   13. Notifications subsystem & 72h reminder idempotence (verified `reminderSentAt` and single dispatch across 2 cron runs)
   14. `lib/apiAuth.ts` test-only auth shortcut safety audit
-  15. Negative tests: all 9 admin endpoints return 401 for anonymous and 403 for citizen/officer; officer outside ward returns 403 on resolve and status update
+  15. Negative tests: all 9 admin endpoints return 401 for anonymous and 403 for citizen/officer; officer outside ward returns 403; officer with no `assignedWardId` returns 403; officer acting on complaint with no `wardId` returns 403
   16. Unrouted complaints isolation: tickets without `wardId` excluded from explore, leaderboard, officer dashboard, and public list; present strictly in admin triage
   17. Civic Trust Index (CTI) refinements: closed ticket denominators, sample size threshold ($\ge 10$), separate verified/auto-closed metrics, and zero/small-sample edge cases
   18. First admin integrity: confirmed admin can only originate from seed or `ADMIN_EMAIL` env variable; public sign-up cannot elevate to admin
+  19. "My Complaints" API & UI: verified `GET /api/complaints/my` returns logged-in citizen's complaints including unrouted tickets with `routingStatus: "Waiting for routing"` and rejects anonymous calls with 401
 - `npm run test:spatial`: **PASS (3 / 3 passed)**
-  1. Boundary auto-routing ($geoIntersects)
-  2. Ingestion deduplication (40m radius category-aware $near)
-  3. Scalable atomic upvoting
 - `npm run test:e2e`: **PASS (7 / 7 passed)**
-  1. Ward boundary auto-routing
-  2. 40m proximity deduplication
-  3. Scalable atomic upvoting
-  4. Location-verified resolution gate
-  5. 5-day citizen audit & dispute circuit breaker
-  6. 120h auto-close daemon audit
-  7. Civic Trust Index formula verification
 - `npm run lint`: **PASS (0 errors, 12 warnings for unoptimized images / react hooks dependencies)**
-- `npm run build`: **PASS (Next.js production build compiled successfully, 10 static/dynamic routes generated)**
+- `npm run build`: **PASS (Next.js production build compiled successfully, 11 static/dynamic routes generated)**

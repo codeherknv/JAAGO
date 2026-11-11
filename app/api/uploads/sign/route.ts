@@ -68,7 +68,6 @@ export async function POST(req: Request) {
       cloudName: effectiveCloudName,
       folder,
       allowed_formats: allowedFormats,
-      maxFileSizeBytes: 5 * 1024 * 1024, // 5MB limit
     });
   } catch (error: any) {
     return formatApiError(error);

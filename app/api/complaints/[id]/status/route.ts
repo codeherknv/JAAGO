@@ -26,11 +26,19 @@ export async function PATCH(
     // Officer Ward Jurisdiction Guard:
     // Field officers can only modify complaints within their assigned ward.
     if (officer.role === 'officer') {
-      if (
-        !officer.assignedWardId ||
-        !complaint.wardId ||
-        officer.assignedWardId.toString() !== complaint.wardId.toString()
-      ) {
+      if (!officer.assignedWardId) {
+        return NextResponse.json(
+          { error: 'Forbidden: Officer has no assigned ward jurisdiction.' },
+          { status: 403 }
+        );
+      }
+      if (!complaint.wardId) {
+        return NextResponse.json(
+          { error: 'Forbidden: Officer action not permitted on unrouted complaint with no ward assignment.' },
+          { status: 403 }
+        );
+      }
+      if (String(officer.assignedWardId) !== String(complaint.wardId)) {
         return NextResponse.json(
           {
             error:

@@ -15,6 +15,7 @@ import {
   Menu,
   X,
   Sparkles,
+  FileText,
 } from 'lucide-react';
 
 export default function Navbar() {
@@ -26,6 +27,9 @@ export default function Navbar() {
     { href: '/explore', label: 'Civic Map', icon: Compass },
     { href: '/report', label: 'Report Issue', icon: AlertTriangle, highlight: true },
     { href: '/leaderboard', label: 'Leaderboard', icon: Trophy },
+    ...(session?.user
+      ? [{ href: '/my-complaints', label: 'My Complaints', icon: FileText }]
+      : []),
     {
       href: '/officer/dashboard',
       label: 'Officer Command',

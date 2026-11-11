@@ -18,6 +18,7 @@ import { getAuthProviders } from '../lib/auth';
 // Import real route handlers
 import { POST as signUploadPOST } from '../app/api/uploads/sign/route';
 import { GET as complaintsGET, POST as complaintsPOST } from '../app/api/complaints/route';
+import { GET as myComplaintsGET } from '../app/api/complaints/my/route';
 import { POST as autoClosePOST } from '../app/api/cron/auto-close/route';
 import { PATCH as resolvePATCH } from '../app/api/complaints/[id]/resolve/route';
 import { PATCH as statusPATCH } from '../app/api/complaints/[id]/status/route';
@@ -44,7 +45,7 @@ async function runAuditFixesVerification() {
   await seedPilotDatabase();
 
   let passed = 0;
-  const total = 18;
+  const total = 19;
 
   const admin = await User.findOne({ email: 'admin@demo.jaago.app' });
   const citizen = await User.findOne({ email: 'citizen.rahul@demo.jaago.app' });
@@ -975,11 +976,75 @@ async function runAuditFixesVerification() {
     throw new Error(`Expected HTTP 403 when officer updates status of complaint outside ward, got ${foreignStatusRes.status}`);
   }
 
+  // Deny officer with no assignedWardId
+  const unassignedOfficerReq = new NextRequest(
+    `http://localhost:3000/api/complaints/${hsrComplaint._id}/resolve`,
+    {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-test-user-id': officer!._id.toString(),
+        'x-test-user-role': 'officer',
+        // Note: x-test-assigned-ward omitted
+      },
+      body: JSON.stringify({
+        lat: 12.912,
+        lng: 77.6385,
+        accuracy: 15,
+        resolutionImageUrl: 'data:image/jpeg;base64,' + Buffer.from('hsr-proof').toString('base64'),
+        remarks: 'Resolving from officer with no ward assignment',
+      }),
+    }
+  );
+  const unassignedOfficerRes = await resolvePATCH(unassignedOfficerReq, { params: { id: hsrComplaint._id.toString() } });
+  const unassignedOfficerData = await unassignedOfficerRes.json();
+  if (unassignedOfficerRes.status !== 403 || !unassignedOfficerData.error.includes('no assigned ward jurisdiction')) {
+    throw new Error(`Expected HTTP 403 when officer has no assignedWardId, got: ${unassignedOfficerRes.status}: ${JSON.stringify(unassignedOfficerData)}`);
+  }
+
+  // Deny officer action on complaint with no wardId
+  const noWardComplaint = await Complaint.create({
+    title: 'Perimeter Drainage Issue',
+    description: 'Complaint with no wardId assignment.',
+    category: 'Water Supply & Drainage',
+    location: { type: 'Point', coordinates: [77.6, 12.9] },
+    address: 'Unassigned Perimeter',
+    status: 'In Progress',
+    reportedBy: citizen!._id,
+    imageUrl: 'data:image/jpeg;base64,' + Buffer.from('no-ward-proof').toString('base64'),
+    upvotesCount: 1,
+    // wardId omitted
+  });
+
+  const noWardActionReq = new NextRequest(
+    `http://localhost:3000/api/complaints/${noWardComplaint._id}/status`,
+    {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-test-user-id': officer!._id.toString(),
+        'x-test-user-role': 'officer',
+        'x-test-assigned-ward': bellandurWard!._id.toString(),
+      },
+      body: JSON.stringify({
+        status: 'In Progress',
+        remarks: 'Attempting status change on unrouted ticket',
+      }),
+    }
+  );
+  const noWardActionRes = await statusPATCH(noWardActionReq, { params: { id: noWardComplaint._id.toString() } });
+  const noWardActionData = await noWardActionRes.json();
+  if (noWardActionRes.status !== 403 || !noWardActionData.error.includes('unrouted complaint with no ward assignment')) {
+    throw new Error(`Expected HTTP 403 on complaint with no wardId, got: ${noWardActionRes.status}: ${JSON.stringify(noWardActionData)}`);
+  }
+
   console.log(`[PASS] Test 15: Negative authorization & officer ward isolation verified:`);
   console.log(`       - All 9 /api/admin/* routes return 401 for anonymous callers.`);
   console.log(`       - All 9 /api/admin/* routes return 403 for citizen and officer callers.`);
   console.log(`       - Officer outside ward attempting resolve returns HTTP 403.`);
   console.log(`       - Officer outside ward attempting status change returns HTTP 403.`);
+  console.log(`       - Officer with no assignedWardId returns HTTP 403.`);
+  console.log(`       - Officer acting on complaint with no wardId returns HTTP 403.`);
   passed++;
 
   // ------------------------------------------------------------------
@@ -1192,6 +1257,75 @@ async function runAuditFixesVerification() {
   console.log(`       - Seeded admin 'admin@demo.jaago.app' confirmed with role 'admin'.`);
   console.log(`       - Public sign-up strictly defaults to role 'citizen' (cannot elevate to admin).`);
   console.log(`       - Configured ADMIN_EMAIL correctly grants admin role when specified.`);
+  passed++;
+
+  // ------------------------------------------------------------------
+  // 19. "MY COMPLAINTS" API & UNROUTED "WAITING FOR ROUTING" TRACKING
+  // ------------------------------------------------------------------
+  console.log('\n--- Test 19: My Complaints API & "Waiting for routing" Label ---');
+  // 19a. Anonymous request rejected -> HTTP 401
+  const anonMyReq = new NextRequest('http://localhost:3000/api/complaints/my');
+  const anonMyRes = await myComplaintsGET(anonMyReq);
+  if (anonMyRes.status !== 401) {
+    throw new Error(`Expected HTTP 401 for anonymous caller on GET /api/complaints/my, got ${anonMyRes.status}`);
+  }
+
+  // 19b. Create an unrouted complaint reported by citizen
+  const citizenUnroutedTicket = await Complaint.create({
+    title: 'Citizen Unrouted Issue Pending Triage',
+    description: 'Testing my-complaints tracking for unrouted ticket with waiting for routing label.',
+    category: 'Sanitation',
+    location: { type: 'Point', coordinates: [77.58, 12.92] },
+    address: 'Bengaluru Border Road',
+    imageUrl: 'data:image/jpeg;base64,' + Buffer.from('my-unrouted-img').toString('base64'),
+    status: 'Pending',
+    reportedBy: citizen!._id,
+    upvotesCount: 1,
+    // wardId omitted
+  });
+
+  // 19c. Authenticated citizen calls GET /api/complaints/my
+  const citizenMyReq = new NextRequest('http://localhost:3000/api/complaints/my', {
+    headers: {
+      'x-test-user-id': citizen!._id.toString(),
+      'x-test-user-role': 'citizen',
+    },
+  });
+  const citizenMyRes = await myComplaintsGET(citizenMyReq);
+  const citizenMyData = await citizenMyRes.json();
+
+  if (citizenMyRes.status !== 200 || !Array.isArray(citizenMyData.complaints)) {
+    throw new Error('GET /api/complaints/my failed to return valid complaints list');
+  }
+
+  // Verify that all returned complaints belong strictly to the citizen
+  const allOwnedByCitizen = citizenMyData.complaints.every(
+    (c: any) =>
+      c.reportedBy.toString() === citizen!._id.toString() ||
+      c.reportedBy?._id?.toString() === citizen!._id.toString()
+  );
+  if (!allOwnedByCitizen) {
+    throw new Error('GET /api/complaints/my leaked complaints from other users');
+  }
+
+  // Verify the unrouted complaint is included and has routingStatus === 'Waiting for routing'
+  const foundMyUnrouted = citizenMyData.complaints.find(
+    (c: any) => c._id.toString() === citizenUnroutedTicket._id.toString()
+  );
+  if (!foundMyUnrouted) {
+    throw new Error('GET /api/complaints/my did not include citizen\'s unrouted complaint');
+  }
+
+  if (foundMyUnrouted.routingStatus !== 'Waiting for routing' || foundMyUnrouted.wardId) {
+    throw new Error(
+      `Expected routingStatus 'Waiting for routing' and null wardId, got: ${foundMyUnrouted.routingStatus}`
+    );
+  }
+
+  console.log(`[PASS] Test 19: My Complaints API verified:`);
+  console.log(`       - Anonymous request rejected with HTTP 401.`);
+  console.log(`       - Returns strictly logged-in citizen's complaints (${citizenMyData.count} tickets).`);
+  console.log(`       - Includes unrouted complaint with routingStatus: "${foundMyUnrouted.routingStatus}".`);
   passed++;
 
   console.log('\n================================================================');
