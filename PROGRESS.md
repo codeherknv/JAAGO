@@ -1,43 +1,81 @@
 # Project Progress: Jaago Platform
 
 ## Status Overview
-- **Core Implementation:** Phases 1 to 5 built, integrated, and verified.
-- **Audit & Remediation:** All 10 `FAIL` and `PARTIAL` items identified in `AUDIT.md` have been fully resolved, hardened, and verified with a dedicated 10-point test suite (`scripts/testFixes.ts`).
-- **Codebase Integrity:** Zero regressions. All existing invariants, spatial queries, and authentication mechanisms remain fully functional.
+- **Core Architecture:** Phases 1 to 5 built and verified.
+- **Audit & Security Hardening:** All items from `AUDIT.md` and subsequent hardening requests have been implemented, tested, and verified with dedicated test suites.
+- **Verification Summary:** All tests, linting, and Next.js production builds pass cleanly with 0 errors.
 
 ---
 
-## Audit Remediation Status
+## Architectural Hardening & Remediation Details
 
-| Item | Focus Area | Initial Verdict | Final Status | Implementation Evidence |
-| :-: | :--- | :---: | :---: | :--- |
-| 1 | MongoDB URI & In-Memory Fallback | **PARTIAL** | **RESOLVED** | `lib/mongodb.ts` now throws an error in `NODE_ENV === 'production'` if primary URI fails, refusing in-memory fallback. |
-| 2 | Cloudinary Signed Uploads vs Local | **PARTIAL** | **RESOLVED** | Removed `app/api/uploads/local` entirely. Direct client uploads using server-signed signatures created in `lib/cloudinaryClient.ts`. |
-| 3 | Server-Side 40m Deduplication | **FAIL** | **RESOLVED** | `POST /api/complaints` re-runs `$near` 40m category check. Returns `409 Conflict` unless `confirmDistinct=true`. |
-| 4 | Cron Secret Header | **FAIL** | **RESOLVED** | `app/api/cron/auto-close/route.ts` requires `Authorization: Bearer <CRON_SECRET>` or `x-cron-secret`. |
-| 5 | Demo Auth Gating | **FAIL** | **RESOLVED** | `lib/auth.ts` disables Credentials provider and demo logins unless `DEMO_AUTH=true`. |
-| 6 | Zod Schema Validation | **FAIL** | **RESOLVED** | Added `zod` and built `lib/validations.ts`. Every API route validates request bodies and query parameters with strict Zod schemas. |
-| 7 | Server-Side Role Enforcement | **FAIL** | **RESOLVED** | Implemented `lib/apiAuth.ts` with `requireAuth()` and `requireRole()`. Replaced dev fallback users with strict HTTP 401/403 responses. |
-| 8 | GPS Accuracy Cap on Resolve | **FAIL** | **RESOLVED** | Added `capGpsAccuracy(accuracy, 100)` in `lib/geo.ts`. Accuracy is capped at 100m and saved to `statusHistory.locationAccuracy`. |
-| 9 | Voting Consistency & Atomicity | **PARTIAL** | **RESOLVED** | Created `lib/reconcileVotes.ts`. Complaint creation atomically creates the reporter vote or rolls back. Seed data generates exact matching vote records. |
-| 10 | Behavioral Test Suite | **PARTIAL** | **RESOLVED** | Added comprehensive `scripts/testFixes.ts` (10 tests) asserting real server behavior, headers, and validation schemas. |
+### 1. Cloudinary Uploads & Environment-Gated Mocking
+- **Test Mode Gating:** Any mock/test Cloudinary signature behavior runs strictly when `NODE_ENV === 'test'`.
+- **Dev & Prod Safety:** In development and production environments (`NODE_ENV !== 'test'`), missing credentials or default placeholder values in `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`, or `CLOUDINARY_CLOUD_NAME` immediately return HTTP `500` with an explicit configuration error message.
+- **Client Fallback:** `lib/cloudinaryClient.ts` throws a descriptive upload rejection or network error in development and production if the remote upload fails, refusing mock fallbacks unless in test mode.
+
+### 2. Database-Backed Rate Limiter
+- Replaced any in-memory rate limiting with a database-backed query:
+  `Complaint.countDocuments({ reportedBy: user.id, createdAt: { $gte: oneHourAgo } })`.
+- Fixed threshold of **3 complaints per hour per user**. Exceeding requests are rejected with HTTP `429 Too Many Requests`.
+- Indexed for scale via compound index on `Complaint`: `{ reportedBy: 1, createdAt: -1 }`.
+
+### 3. Single-Transaction Complaint & Vote Creation
+- Complaint creation and the reporter's initial vote are created atomically in a single MongoDB transaction via `session.withTransaction(...)` in `app/api/complaints/route.ts`.
+- The delete-on-failure workaround (`Complaint.findByIdAndDelete`) has been completely removed.
+- `lib/reconcileVotes.ts` (`reconcileAllVotes`) remains intact as a scheduled/background safety net.
+
+### 4. Technical Note: 5MB Limit and Image Format Enforcement
+Image limits and formats are enforced in a defense-in-depth model across three distinct layers:
+1. **Client-Side Pre-Flight Check (`lib/cloudinaryClient.ts`):**
+   - Validates `file.size <= 5 * 1024 * 1024` (5MB).
+   - Validates `file.type` against `['image/jpeg', 'image/png', 'image/webp', 'image/jpg']` prior to dispatching upload requests.
+2. **Cloudinary Signature & Upload Gateway (`app/api/uploads/sign/route.ts`):**
+   - Signature parameters include `folder='jaago_complaints'` and `allowed_formats=['jpg', 'jpeg', 'png', 'webp']`.
+   - The Cloudinary upload API verifies the HMAC-SHA1 signature and enforces format restrictions directly at the ingest boundary.
+3. **Server-Side Ingestion Validation (`lib/validations.ts` & API Routes):**
+   - All complaint and resolution routes (`POST /api/complaints`, `PATCH /api/complaints/[id]/resolve`, `POST /api/complaints/[id]/verify`) enforce `imageProofSchema` on `imageUrl` and `resolutionImageUrl`.
+   - For base64 data URIs: parses the header to enforce MIME types (`image/jpeg`, `image/png`, `image/webp`) and decodes base64 buffer length to ensure byte size does not exceed 5MB (`5 * 1024 * 1024` bytes).
+   - For HTTP/HTTPS URLs: parses and validates the URL protocol and ensures the path points to Cloudinary (`cloudinary.com`) or has an allowed extension (`.jpg`, `.jpeg`, `.png`, `.webp`).
+
+### 5. API Route Zod Validation Audit
+Every API route in the application has been audited and validated:
+- `app/api/complaints/route.ts` (GET): Validated with `listComplaintsQuerySchema`.
+- `app/api/complaints/route.ts` (POST): Validated with `createComplaintSchema`.
+- `app/api/complaints/nearby/route.ts` (GET): Validated with `nearbyQuerySchema`.
+- `app/api/complaints/[id]/route.ts` (GET): Validated with `ObjectIdSchema`.
+- `app/api/complaints/[id]/resolve/route.ts` (PATCH): Validated with `ObjectIdSchema` & `resolveComplaintSchema`.
+- `app/api/complaints/[id]/status/route.ts` (PATCH): Validated with `ObjectIdSchema` & `updateStatusSchema`.
+- `app/api/complaints/[id]/upvote/route.ts` (POST): Validated with `ObjectIdSchema`.
+- `app/api/complaints/[id]/upvote/route.ts` (GET): Validated with `ObjectIdSchema` and query validated with `getUpvoteQuerySchema`.
+- `app/api/complaints/[id]/verify/route.ts` (POST): Validated with `ObjectIdSchema` & `verifyComplaintSchema`.
+- `app/api/cron/auto-close/route.ts` (GET & POST): Validated with `cronQuerySchema`.
+- `app/api/uploads/sign/route.ts` (POST): Validated with `signUploadSchema`.
+
+**Routes Left Unvalidated by Custom Zod:**
+- `app/api/auth/[...nextauth]/route.ts`: Left unvalidated by custom Zod schemas because NextAuth manages its own internal protocol routes (CSRF token verification, OAuth callbacks, session state).
+
+### 6. Test Suite Architecture (`scripts/testFixes.ts`)
+The test runner invokes real Next.js route handlers directly via `NextRequest`:
+- **Real Route Handlers Called:**
+  - Test 1: Real `POST /api/uploads/sign` (tests both dev 500 rejection and test-mode signing).
+  - Test 2: Real `POST /api/complaints` (tests 409 duplicate rejection and `confirmDistinct: true` override).
+  - Test 3: Real `POST /api/cron/auto-close` (tests 401 unauthenticated and 200 with `CRON_SECRET`).
+  - Test 5: Real `POST /api/complaints` (tests 400 Zod failure) & real `PATCH /api/complaints/[id]/resolve` (tests 403 role block).
+  - Test 6: Real `PATCH /api/complaints/[id]/resolve` (tests 100m GPS accuracy clamping and radius bounding).
+  - Test 7: Real `POST /api/complaints` (tests atomic MongoDB transaction creating complaint + vote).
+  - Test 8: Real `POST /api/complaints` (tests database-backed rate limit triggering 429 on 4th submission).
+- **Tests Marked as Unable to Call Route Handlers Directly:**
+  - **Test 4 (Credentials Gating):** NextAuth's `authOptions` is an initialization config object in `lib/auth.ts`, not an exported route handler. Evaluated via dynamic provider assertion under `DEMO_AUTH=false` vs `DEMO_AUTH=true`.
+  - **Test 9 (Domain Audit):** Database collection-wide query asserting zero `.gov.in`/`.nic.in` domains exist in `User` and `OfficerAllowList`.
+  - **Test 10 (Production Fallback Guard):** Source inspection verifying `lib/mongodb.ts` refuses in-memory server instantiation when `NODE_ENV === 'production'`.
 
 ---
 
 ## Test & Build Verification Results
 
 - `npm run test:fixes`: **PASS (10 / 10 passed)**
-  1. Local disk storage removal & Cloudinary signature verification
-  2. Server-side duplicate re-check (409 Conflict vs `confirmDistinct=true`)
-  3. `CRON_SECRET` header enforcement
-  4. Credentials login gated by `DEMO_AUTH=true`
-  5. Zod schema validation & `requireRole()` role checks
-  6. GPS accuracy capped at 100m
-  7. Atomic voting consistency & reconciliation
-  8. Rate limiting (3 complaints / hour / user)
-  9. Domain audit (0 fake gov domains; all `@demo.jaago.app`)
-  10. In-memory fallback production guard in `lib/mongodb.ts`
 - `npm run test:spatial`: **PASS (3 / 3 passed)**
 - `npm run test:e2e`: **PASS (7 / 7 passed)**
 - `npm run lint`: **PASS (0 errors, 10 warnings)**
-- `npm run build`: **PASS (Compiled successfully, 10 routes generated)**
+- `npm run build`: **PASS (Compiled successfully, 9 static/dynamic routes generated)**

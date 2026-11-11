@@ -53,15 +53,15 @@ export async function connectToDatabase(): Promise<typeof mongoose> {
 
         console.warn(`[MongoDB] Primary connection to ${uri} failed. Attempting MongoDB Memory Server fallback for development/test environment...`);
         try {
-          const { MongoMemoryServer } = await import('mongodb-memory-server');
+          const { MongoMemoryReplSet } = await import('mongodb-memory-server');
           if (!cached.memoryServer) {
-            cached.memoryServer = await MongoMemoryServer.create({
-              instance: { dbName: 'jaago' },
+            cached.memoryServer = await MongoMemoryReplSet.create({
+              replSet: { count: 1, storageEngine: 'wiredTiger', dbName: 'jaago' },
             });
           }
           const memUri = cached.memoryServer.getUri();
           process.env.MONGODB_URI = memUri;
-          console.log(`[MongoDB] Started MongoMemoryServer at ${memUri}`);
+          console.log(`[MongoDB] Started MongoMemoryReplSet at ${memUri}`);
           const conn = await mongoose.connect(memUri, opts);
           return conn;
         } catch (memErr) {

@@ -25,7 +25,21 @@ export class AuthError extends Error {
 /**
  * Shared requireAuth helper enforcing valid session server-side
  */
-export async function requireAuth(): Promise<AuthenticatedUser> {
+export async function requireAuth(req?: Request): Promise<AuthenticatedUser> {
+  // In test environment, allow passing test user context via headers for direct route handler testing
+  if (process.env.NODE_ENV === 'test' && req) {
+    const testUserId = req.headers.get('x-test-user-id');
+    const testUserRole = (req.headers.get('x-test-user-role') || 'citizen') as UserRole;
+    if (testUserId) {
+      return {
+        id: testUserId,
+        email: req.headers.get('x-test-user-email') || 'test@demo.jaago.app',
+        name: 'Test Runner User',
+        role: testUserRole,
+      };
+    }
+  }
+
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) {
     throw new AuthError('Authentication required. Please sign in.', 401);
@@ -36,8 +50,8 @@ export async function requireAuth(): Promise<AuthenticatedUser> {
 /**
  * Shared requireRole helper enforcing strict role-based access control server-side
  */
-export async function requireRole(allowedRoles: UserRole[]): Promise<AuthenticatedUser> {
-  const user = await requireAuth();
+export async function requireRole(allowedRoles: UserRole[], req?: Request): Promise<AuthenticatedUser> {
+  const user = await requireAuth(req);
   if (!allowedRoles.includes(user.role)) {
     throw new AuthError(
       `Forbidden: Access restricted to roles: [${allowedRoles.join(', ')}]. Current role: '${user.role}'.`,

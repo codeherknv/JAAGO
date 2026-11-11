@@ -57,31 +57,41 @@ export async function uploadToCloudinary(file: File): Promise<string> {
     const cloudErr = await cloudRes.json().catch(() => ({}));
     console.warn('[Cloudinary Direct Upload Notice]:', cloudErr?.error?.message || 'Remote rejected');
 
-    // In local dev/test when demo keys are used, if remote rejects, create an object URL / data URL fallback
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        if (reader.result) {
-          resolve(reader.result as string);
-        } else {
-          reject(new Error('Failed to read image buffer'));
-        }
-      };
-      reader.onerror = () => reject(new Error('Image reader error'));
-      reader.readAsDataURL(file);
-    });
+    // Any mock/test behavior runs strictly when NODE_ENV === 'test'
+    if (process.env.NODE_ENV === 'test') {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          if (reader.result) {
+            resolve(reader.result as string);
+          } else {
+            reject(new Error('Failed to read image buffer'));
+          }
+        };
+        reader.onerror = () => reject(new Error('Image reader error'));
+        reader.readAsDataURL(file);
+      });
+    }
+
+    throw new Error(
+      `Cloudinary upload rejected (${cloudRes.status}): ${
+        cloudErr?.error?.message || 'Invalid Cloudinary credentials or configuration'
+      }`
+    );
   } catch (netErr: any) {
-    console.warn('[Cloudinary Network]:', netErr.message);
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        if (reader.result) {
-          resolve(reader.result as string);
-        } else {
-          reject(new Error('Failed to read image buffer'));
-        }
-      };
-      reader.readAsDataURL(file);
-    });
+    if (process.env.NODE_ENV === 'test') {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          if (reader.result) {
+            resolve(reader.result as string);
+          } else {
+            reject(new Error('Failed to read image buffer'));
+          }
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+    throw new Error(`Cloudinary upload failed: ${netErr.message}`);
   }
 }

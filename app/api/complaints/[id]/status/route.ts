@@ -11,7 +11,7 @@ export async function PATCH(
   { params }: { params: { id: string } }
 ) {
   try {
-    const officer = await requireRole(['officer', 'admin']);
+    const officer = await requireRole(['officer', 'admin'], req);
     const complaintId = ObjectIdSchema.parse(params.id);
 
     const body = await req.json();

@@ -4,7 +4,7 @@ import { Complaint } from '@/models/Complaint';
 import { Vote } from '@/models/Vote';
 import { calculatePriorityScore } from '@/lib/geo';
 import { requireAuth, formatApiError } from '@/lib/apiAuth';
-import { ObjectIdSchema } from '@/lib/validations';
+import { ObjectIdSchema, getUpvoteQuerySchema } from '@/lib/validations';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,7 +13,7 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
-    const user = await requireAuth();
+    const user = await requireAuth(req);
     const complaintId = ObjectIdSchema.parse(params.id);
 
     await connectToDatabase();
@@ -78,14 +78,16 @@ export async function GET(
   try {
     const complaintId = ObjectIdSchema.parse(params.id);
     const { searchParams } = new URL(req.url);
-    const queryUserId = searchParams.get('userId');
+    const { userId: queryUserId } = getUpvoteQuerySchema.parse({
+      userId: searchParams.get('userId') || undefined,
+    });
 
     await connectToDatabase();
 
     let userId = queryUserId;
     if (!userId) {
       try {
-        const user = await requireAuth();
+        const user = await requireAuth(req);
         userId = user.id;
       } catch {
         return NextResponse.json({ hasUpvoted: false });

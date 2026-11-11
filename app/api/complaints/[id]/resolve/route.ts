@@ -17,7 +17,7 @@ export async function PATCH(
 ) {
   try {
     // 1. Enforce officer / admin role server-side
-    const officer = await requireRole(['officer', 'admin']);
+    const officer = await requireRole(['officer', 'admin'], req);
 
     // 2. Validate route param
     const complaintId = ObjectIdSchema.parse(params.id);

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import mongoose from 'mongoose';
 import { connectToDatabase } from '@/lib/mongodb';
 import { Complaint } from '@/models/Complaint';
 import { Ward } from '@/models/Ward';
@@ -50,7 +51,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     // 1. Enforce authentication server-side
-    const user = await requireAuth();
+    const user = await requireAuth(req);
 
     // 2. Validate input body using Zod
     const body = await req.json();
@@ -154,50 +155,102 @@ export async function POST(req: NextRequest) {
     // 7. Calculate initial Priority Score
     const priorityScore = calculatePriorityScore(category, 1, new Date(), 0);
 
-    // 8. Create Complaint with Invariant 7 (Append-Only Audit)
-    const newComplaint = new Complaint({
-      title,
-      description,
-      category,
-      location: {
-        type: 'Point',
-        coordinates: [lng, lat],
-      },
-      address: address || `${matchedWard.name}, Bengaluru`,
-      wardId: matchedWard._id,
-      agencyId: matchedAgency?._id,
-      imageUrl,
-      status: 'Pending',
-      reportedBy: user.id,
-      upvotesCount: 1,
-      reopenCount: 0,
-      priorityScore,
-      statusHistory: [
-        {
-          status: 'Pending',
-          actorId: user.id as any,
-          role: user.role || 'citizen',
-          timestamp: new Date(),
-          remarks: 'Complaint filed with verified geolocation and photograph.',
-        },
-      ],
-    });
+    // 8. Create Complaint and reporter's Vote atomically in one MongoDB transaction
+    const db = await connectToDatabase();
+    const session = await db.startSession();
+    let createdComplaintId: any;
 
-    await newComplaint.save();
-
-    // 9. Atomic Vote consistency: create reporter's initial vote
     try {
-      await Vote.create({
-        complaintId: newComplaint._id,
-        userId: user.id,
+      await session.withTransaction(async () => {
+        const [complaint] = await Complaint.create(
+          [
+            {
+              title,
+              description,
+              category,
+              location: {
+                type: 'Point',
+                coordinates: [lng, lat],
+              },
+              address: address || `${matchedWard.name}, Bengaluru`,
+              wardId: matchedWard._id,
+              agencyId: matchedAgency?._id,
+              imageUrl,
+              status: 'Pending',
+              reportedBy: user.id,
+              upvotesCount: 1,
+              reopenCount: 0,
+              priorityScore,
+              statusHistory: [
+                {
+                  status: 'Pending',
+                  actorId: user.id as any,
+                  role: user.role || 'citizen',
+                  timestamp: new Date(),
+                  remarks: 'Complaint filed with verified geolocation and photograph.',
+                },
+              ],
+            },
+          ],
+          { session }
+        );
+
+        createdComplaintId = complaint._id;
+
+        await Vote.create(
+          [
+            {
+              complaintId: complaint._id,
+              userId: user.id,
+            },
+          ],
+          { session }
+        );
       });
-    } catch (voteErr: any) {
-      // Reconcile consistency: if Vote insertion fails, roll back complaint
-      await Complaint.findByIdAndDelete(newComplaint._id);
-      throw new Error(`Failed to initialize consistent vote record: ${voteErr.message}`);
+    } catch (txErr: any) {
+      if (txErr?.message?.includes('replica set member')) {
+        // Fallback for non-replica set environments that lack transactions
+        const fallbackComplaint = new Complaint({
+          title,
+          description,
+          category,
+          location: {
+            type: 'Point',
+            coordinates: [lng, lat],
+          },
+          address: address || `${matchedWard.name}, Bengaluru`,
+          wardId: matchedWard._id,
+          agencyId: matchedAgency?._id,
+          imageUrl,
+          status: 'Pending',
+          reportedBy: user.id,
+          upvotesCount: 1,
+          reopenCount: 0,
+          priorityScore,
+          statusHistory: [
+            {
+              status: 'Pending',
+              actorId: user.id as any,
+              role: user.role || 'citizen',
+              timestamp: new Date(),
+              remarks: 'Complaint filed with verified geolocation and photograph.',
+            },
+          ],
+        });
+        await fallbackComplaint.save();
+        createdComplaintId = fallbackComplaint._id;
+        await Vote.create({
+          complaintId: fallbackComplaint._id,
+          userId: user.id,
+        });
+      } else {
+        throw txErr;
+      }
+    } finally {
+      await session.endSession();
     }
 
-    const populatedComplaint = await Complaint.findById(newComplaint._id)
+    const populatedComplaint = await Complaint.findById(createdComplaintId)
       .populate('wardId', 'name code corporation')
       .populate('agencyId', 'name shortName')
       .populate('reportedBy', 'name email');

@@ -12,7 +12,7 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
-    const caller = await requireAuth();
+    const caller = await requireAuth(req);
     const complaintId = ObjectIdSchema.parse(params.id);
 
     const body = await req.json();

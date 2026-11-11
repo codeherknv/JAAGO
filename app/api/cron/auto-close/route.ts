@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/mongodb';
 import { Complaint } from '@/models/Complaint';
 import { User } from '@/models/User';
+import { cronQuerySchema } from '@/lib/validations';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,6 +16,10 @@ export async function POST(req: NextRequest) {
 
 async function handleAutoClose(req: NextRequest) {
   try {
+    const { searchParams } = new URL(req.url);
+    const { dryRun } = cronQuerySchema.parse({
+      dryRun: searchParams.get('dryRun') || undefined,
+    });
     // Audit Item 4 Fix: CRON_SECRET header verification
     const authHeader = req.headers.get('authorization');
     const cronSecretHeader = req.headers.get('x-cron-secret');

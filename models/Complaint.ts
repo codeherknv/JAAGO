@@ -141,6 +141,8 @@ const ComplaintSchema = new Schema<IComplaint>(
 ComplaintSchema.index({ location: '2dsphere' });
 // Compound index for active complaints by category and status
 ComplaintSchema.index({ category: 1, status: 1 });
+// Compound index for user rate limiting (last hour query)
+ComplaintSchema.index({ reportedBy: 1, createdAt: -1 });
 
 export const Complaint: Model<IComplaint> =
   mongoose.models.Complaint || mongoose.model<IComplaint>('Complaint', ComplaintSchema);
