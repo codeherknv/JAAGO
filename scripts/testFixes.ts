@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import { NextRequest } from 'next/server';
 import { connectToDatabase } from '../lib/mongodb';
 import { Ward } from '../models/Ward';
@@ -13,6 +14,12 @@ import { seedPilotDatabase } from './seedPilot';
 import { reconcileAllVotes } from '../lib/reconcileVotes';
 import { imageProofSchema, verifyCloudinaryAssetSize, getOriginalCloudinaryUrl } from '../lib/validations';
 import { calculateSingleWardStats, rankWardStats, getLeaderboardData } from '../lib/leaderboard';
+import {
+  CATEGORY_SLA_HOURS,
+  getCategorySlaHours,
+  isComplaintOverdue,
+  getOfficerResolveTimestamp,
+} from '../lib/slaConfig';
 import { getAuthProviders } from '../lib/auth';
 
 // Import real route handlers
@@ -103,10 +110,23 @@ async function runAuditFixesVerification() {
     testSignData.folder === 'jaago_complaints' &&
     testSignData.allowed_formats === 'jpg,jpeg,png,webp'
   ) {
+    // 1c. Verify Cloudinary signature string strictly uses verbatim &timestamp (no corrupted character like &times;)
+    const signRouteSource = fs.readFileSync(path.join(__dirname, '../app/api/uploads/sign/route.ts'), 'utf-8');
+    if (!signRouteSource.includes('&timestamp=')) {
+      throw new Error('Test 1 failed: app/api/uploads/sign/route.ts does not use verbatim &timestamp= in signing string!');
+    }
+    const testSecret = 'jaago-cloudinary-test-secret-sample-1234';
+    const expectedParamsToSign = `allowed_formats=jpg,jpeg,png,webp&folder=jaago_complaints&timestamp=${testSignData.timestamp}${testSecret}`;
+    const computedSignature = crypto.createHash('sha1').update(expectedParamsToSign).digest('hex');
+    if (testSignData.signature !== computedSignature) {
+      throw new Error(`Test 1 failed: Signature mismatch! Computed: ${computedSignature}, Received: ${testSignData.signature}`);
+    }
+
     console.log(`[PASS] Test 1: Real POST /api/uploads/sign verified:`);
     console.log(`       - In dev/prod with missing keys: returned HTTP 500 error.`);
     console.log(`       - In test mode: returned signature '${testSignData.signature.substring(0, 10)}...'`);
     console.log(`       - Signed allowed_formats parameter: '${testSignData.allowed_formats}' in alphabetical order.`);
+    console.log(`       - Signature string confirmed using verbatim '&timestamp' without character corruption.`);
     passed++;
   } else {
     throw new Error('Test 1 failed: upload signing route response invalid');
@@ -1122,9 +1142,12 @@ async function runAuditFixesVerification() {
     zeroWardStats.ctiScore !== null ||
     zeroWardStats.rank !== null ||
     zeroWardStats.closedCount !== 0 ||
+    zeroWardStats.openCount !== 0 ||
+    zeroWardStats.overdueOpenCount !== 0 ||
+    zeroWardStats.overdueOpenRate !== null ||
     Number.isNaN(zeroWardStats.ctiScore)
   ) {
-    throw new Error('Zero-ticket ward CTI assertion failed: must have hasEnoughData: false, ctiScore: null');
+    throw new Error('Zero-ticket ward CTI assertion failed: must have hasEnoughData: false, ctiScore: null, overdueOpenRate: null');
   }
 
   // 17b. Small-sample ward (< 10 closed complaints, e.g. 5 closed: 4 verified, 1 auto-closed)
@@ -1145,6 +1168,7 @@ async function runAuditFixesVerification() {
     smallWardStats.ctiScore !== null ||
     smallWardStats.rank !== null ||
     smallWardStats.closedCount !== 5 ||
+    smallWardStats.openCount !== 1 ||
     smallWardStats.participationRate !== 80
   ) {
     throw new Error('Small-sample ward (< 10 closed) must have hasEnoughData: false and ctiScore: null');
@@ -1156,6 +1180,7 @@ async function runAuditFixesVerification() {
   for (let i = 0; i < 9; i++) {
     largeSampleComplaints.push({
       status: 'Resolved - Citizen Verified',
+      category: 'Roads',
       reopenCount: i === 0 ? 1 : 0,
       createdAt: new Date(Date.now() - 24 * 3600 * 1000),
       statusHistory: [{ timestamp: new Date() }], // 24h duration <= 72h SLA
@@ -1165,6 +1190,7 @@ async function runAuditFixesVerification() {
   for (let i = 0; i < 3; i++) {
     largeSampleComplaints.push({
       status: 'Resolved - Auto Closed',
+      category: 'Roads',
       reopenCount: 0,
       createdAt: new Date(Date.now() - 48 * 3600 * 1000),
       statusHistory: [{ timestamp: new Date() }], // 48h duration <= 72h SLA
@@ -1184,12 +1210,197 @@ async function runAuditFixesVerification() {
     largeWardStats.citizenVerifiedRate !== 0.75 ||
     largeWardStats.autoClosedRate !== 0.25 ||
     largeWardStats.reopenRate !== 1 / 12 ||
-    largeWardStats.slaComplianceRate !== 1.0
+    largeWardStats.slaComplianceRate !== 1.0 ||
+    largeWardStats.openCount !== 0 ||
+    largeWardStats.overdueOpenRate !== null
   ) {
     throw new Error(`Large-sample ward calculation failed: ${JSON.stringify(largeWardStats)}`);
   }
 
-  // 17d. Ranking order: wards with enough data are ranked 1, 2... unranked wards have rank: null
+  // 17d. ParticipationRate: distinct closed complaints where citizen verified OR reopened (never exceeds 100%)
+  const reopenedThenVerifiedComplaint = {
+    status: 'Resolved - Citizen Verified',
+    category: 'Roads',
+    reopenCount: 2, // Reopened twice, then verified
+    createdAt: new Date(Date.now() - 36 * 3600 * 1000),
+    statusHistory: [
+      { status: 'Pending Verification', role: 'officer', timestamp: new Date(Date.now() - 30 * 3600 * 1000) },
+      { status: 'Reopened - Escalated', role: 'citizen', timestamp: new Date(Date.now() - 25 * 3600 * 1000) },
+      { status: 'Pending Verification', role: 'officer', timestamp: new Date(Date.now() - 15 * 3600 * 1000) },
+      { status: 'Resolved - Citizen Verified', role: 'citizen', timestamp: new Date(Date.now() - 10 * 3600 * 1000) },
+    ],
+  };
+  const distinctSingleWard = calculateSingleWardStats(
+    { _id: 'ward-distinct-1', name: 'Distinct Single Ward', code: 'W-301', corporation: 'BBMP' },
+    [reopenedThenVerifiedComplaint]
+  );
+  if (
+    distinctSingleWard.closedCount !== 1 ||
+    distinctSingleWard.citizenVerifiedCount !== 1 ||
+    distinctSingleWard.reopenedCount !== 1 ||
+    distinctSingleWard.participationRate !== 100
+  ) {
+    throw new Error(
+      `Reopened and verified complaint failed distinct rate: ${distinctSingleWard.participationRate}%`
+    );
+  }
+
+  // Two closed tickets: 1 reopened & verified, 1 auto-closed without reopen -> participationRate must be 50%, never > 100%
+  const distinctTwoWard = calculateSingleWardStats(
+    { _id: 'ward-distinct-2', name: 'Distinct Two Ward', code: 'W-302', corporation: 'BBMP' },
+    [
+      reopenedThenVerifiedComplaint,
+      {
+        status: 'Resolved - Auto Closed',
+        category: 'Roads',
+        reopenCount: 0,
+        createdAt: new Date(Date.now() - 120 * 3600 * 1000),
+        statusHistory: [{ timestamp: new Date() }],
+      },
+    ]
+  );
+  if (
+    distinctTwoWard.closedCount !== 2 ||
+    distinctTwoWard.participationRate !== 50 ||
+    distinctTwoWard.participationRate > 100
+  ) {
+    throw new Error(
+      `Distinct two-complaint participation rate failed: ${distinctTwoWard.participationRate}%`
+    );
+  }
+
+  // 17e. OverdueOpenRate per ward: open complaints past category SLA / all open complaints
+  // Edge case: Zero open complaints
+  const zeroOpenWard = calculateSingleWardStats(
+    { _id: 'ward-zero-open', name: 'Zero Open Ward', code: 'W-401', corporation: 'BBMP' },
+    [
+      {
+        status: 'Resolved - Citizen Verified',
+        createdAt: new Date(),
+        statusHistory: [{ timestamp: new Date() }],
+      },
+    ]
+  );
+  if (
+    zeroOpenWard.openCount !== 0 ||
+    zeroOpenWard.overdueOpenCount !== 0 ||
+    zeroOpenWard.overdueOpenRate !== null
+  ) {
+    throw new Error(
+      'Zero open complaints must return openCount: 0, overdueOpenCount: 0, overdueOpenRate: null'
+    );
+  }
+
+  // Mixed open complaints:
+  // 1. Sanitation (SLA = 24h), created 30h ago, status 'Pending' -> Overdue!
+  // 2. Roads (SLA = 72h), created 10h ago, status 'In Progress' -> Compliant!
+  // 3. Streetlights (SLA = 48h), created 60h ago, resolved at 20h, status 'Pending Verification' -> Compliant (officer resolved at 20h <= 48h)!
+  // 4. Streetlights (SLA = 48h), created 60h ago, resolved at 55h, status 'Pending Verification' -> Overdue (officer resolved at 55h > 48h)!
+  // 5. Rejected - Invalid -> ignored from openComplaints!
+  // 6. Resolved - Citizen Verified -> ignored from openComplaints!
+  const mixedOpenComplaints = [
+    {
+      category: 'Sanitation',
+      status: 'Pending',
+      createdAt: new Date(Date.now() - 30 * 3600 * 1000), // 30h > 24h SLA
+    },
+    {
+      category: 'Roads',
+      status: 'In Progress',
+      createdAt: new Date(Date.now() - 10 * 3600 * 1000), // 10h <= 72h SLA
+    },
+    {
+      category: 'Streetlights',
+      status: 'Pending Verification',
+      createdAt: new Date(Date.now() - 60 * 3600 * 1000),
+      statusHistory: [
+        {
+          status: 'Pending Verification',
+          role: 'officer',
+          timestamp: new Date(Date.now() - 40 * 3600 * 1000), // resolved 20h after creation <= 48h SLA
+        },
+      ],
+    },
+    {
+      category: 'Streetlights',
+      status: 'Pending Verification',
+      createdAt: new Date(Date.now() - 60 * 3600 * 1000),
+      statusHistory: [
+        {
+          status: 'Pending Verification',
+          role: 'officer',
+          timestamp: new Date(Date.now() - 5 * 3600 * 1000), // resolved 55h after creation > 48h SLA
+        },
+      ],
+    },
+    {
+      category: 'Roads',
+      status: 'Rejected - Invalid',
+      createdAt: new Date(Date.now() - 100 * 3600 * 1000),
+    },
+    {
+      category: 'Roads',
+      status: 'Resolved - Citizen Verified',
+      createdAt: new Date(Date.now() - 20 * 3600 * 1000),
+      statusHistory: [{ timestamp: new Date() }],
+    },
+  ];
+  const mixedOpenWard = calculateSingleWardStats(
+    { _id: 'ward-mixed-open', name: 'Mixed Open Ward', code: 'W-402', corporation: 'BBMP' },
+    mixedOpenComplaints
+  );
+  if (
+    mixedOpenWard.openCount !== 4 ||
+    mixedOpenWard.overdueOpenCount !== 2 ||
+    mixedOpenWard.overdueOpenRate !== 50
+  ) {
+    throw new Error(
+      `Mixed open ward failed: openCount=${mixedOpenWard.openCount}, overdue=${mixedOpenWard.overdueOpenCount}, rate=${mixedOpenWard.overdueOpenRate}%`
+    );
+  }
+
+  // 17f. Category-based SLA configuration and clock running to officer's resolve action
+  if (
+    CATEGORY_SLA_HOURS.Sanitation !== 24 ||
+    CATEGORY_SLA_HOURS.Streetlights !== 48 ||
+    CATEGORY_SLA_HOURS['Water Supply & Drainage'] !== 48 ||
+    CATEGORY_SLA_HOURS.Roads !== 72 ||
+    CATEGORY_SLA_HOURS.Others !== 72 ||
+    getCategorySlaHours('NonExistent' as any) !== 72
+  ) {
+    throw new Error('CATEGORY_SLA_HOURS configuration mismatch');
+  }
+
+  // Verify that clock stops at officer resolve action:
+  // Complaint created 100h ago, officer resolved at 20h, citizen verified at 96h.
+  // Category: Sanitation (SLA = 24h).
+  // Officer resolution at 20h <= 24h -> Must count as SLA compliant!
+  const officerResolvedComplaint = {
+    category: 'Sanitation',
+    status: 'Resolved - Citizen Verified',
+    createdAt: new Date(Date.now() - 100 * 3600 * 1000),
+    statusHistory: [
+      {
+        status: 'Pending Verification',
+        role: 'officer',
+        timestamp: new Date(Date.now() - 80 * 3600 * 1000), // 20h after creation
+      },
+      {
+        status: 'Resolved - Citizen Verified',
+        role: 'citizen',
+        timestamp: new Date(Date.now() - 4 * 3600 * 1000), // 96h after creation
+      },
+    ],
+  };
+  const officerResolveTimestamp = getOfficerResolveTimestamp(officerResolvedComplaint);
+  const officerResolveHours = Math.round(
+    (officerResolveTimestamp! - new Date(officerResolvedComplaint.createdAt).getTime()) / (3600 * 1000)
+  );
+  if (officerResolveHours !== 20) {
+    throw new Error(`Expected officer resolve duration 20h, got ${officerResolveHours}h`);
+  }
+
+  // 17g. Ranking order: wards with enough data are ranked 1, 2... unranked wards have rank: null
   const rankedResults = rankWardStats([zeroWardStats, smallWardStats, largeWardStats]);
   if (
     rankedResults[0].wardId !== 'ward-large-id' ||
@@ -1200,11 +1411,13 @@ async function runAuditFixesVerification() {
     throw new Error('Ranking order failed: Only wards with >= 10 closed complaints should receive numeric ranks');
   }
 
-  console.log(`[PASS] Test 17: Civic Trust Index (CTI) refinements verified:`);
-  console.log(`       - Zero-ticket ward: closedCount=0, hasEnoughData=false, ctiScore=null (no NaN).`);
+  console.log(`[PASS] Test 17: Civic Trust Index (CTI) & Operational Refinements verified:`);
+  console.log(`       - Zero-ticket ward: closedCount=0, openCount=0, hasEnoughData=false, ctiScore=null, overdueOpenRate=null.`);
   console.log(`       - Small-sample ward: closedCount=5 (< 10), hasEnoughData=false, participationRate=80%.`);
   console.log(`       - Large-sample ward: closedCount=12, hasEnoughData=true, ctiScore=${largeWardStats.ctiScore}, participationRate=75%.`);
-  console.log(`       - Verified citizen-verified (9) and auto-closed (3) counts displayed separately.`);
+  console.log(`       - ParticipationRate strictly counts distinct closed complaints (reopened then verified = 100%, never > 100%).`);
+  console.log(`       - OverdueOpenRate handles zero open complaints (null) and computes overdue percentage (50% on mixed queue).`);
+  console.log(`       - Per-category SLA configuration verified; duration runs from creation to officer resolve action.`);
   console.log(`       - Only wards meeting statistical threshold receive rank #1.`);
   passed++;
 

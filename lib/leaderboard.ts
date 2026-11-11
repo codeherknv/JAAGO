@@ -1,6 +1,11 @@
 import { connectToDatabase } from './mongodb';
 import { Ward } from '@/models/Ward';
 import { Complaint } from '@/models/Complaint';
+import {
+  getCategorySlaHours,
+  getOfficerResolveTimestamp,
+  isComplaintOverdue,
+} from './slaConfig';
 
 export interface WardLeaderboardStats {
   wardId: string;
@@ -8,6 +13,9 @@ export interface WardLeaderboardStats {
   code: string;
   corporation: string;
   totalComplaints: number;
+  openCount: number; // Open complaints (not closed, not rejected)
+  overdueOpenCount: number; // Open complaints past their SLA
+  overdueOpenRate: number | null; // (overdueOpenCount / openCount) * 100, or null if openCount === 0
   closedCount: number; // Sample size of closed complaints used as denominator
   citizenVerifiedCount: number;
   autoClosedCount: number;
@@ -31,6 +39,17 @@ export interface WardLeaderboardStats {
 export function calculateSingleWardStats(ward: any, wardComplaints: any[]): WardLeaderboardStats {
   const totalComplaints = wardComplaints.length;
 
+  // Open complaints: not closed ('Resolved - *') and not rejected ('Rejected - Invalid')
+  const openComplaints = wardComplaints.filter(
+    (c) =>
+      !['Resolved - Citizen Verified', 'Resolved - Auto Closed', 'Rejected - Invalid'].includes(
+        c.status
+      )
+  );
+  const openCount = openComplaints.length;
+  const overdueOpenCount = openComplaints.filter((c) => isComplaintOverdue(c)).length;
+  const overdueOpenRate = openCount > 0 ? Math.round((overdueOpenCount / openCount) * 100) : null;
+
   // Closed complaints denominator: tickets resolved and closed through citizen verification or auto-close
   const closedComplaints = wardComplaints.filter((c) =>
     ['Resolved - Citizen Verified', 'Resolved - Auto Closed'].includes(c.status)
@@ -47,6 +66,18 @@ export function calculateSingleWardStats(ward: any, wardComplaints: any[]): Ward
 
   const reopenedCount = closedComplaints.filter((c) => (c.reopenCount || 0) > 0).length;
 
+  // Citizen Participation Rate:
+  // Count distinct closed complaints where the citizen verified OR reopened, divided by closedCount.
+  // Using a Set / distinct filter ensures that a complaint that was both reopened and verified
+  // is counted exactly once and can NEVER exceed 100%.
+  const participatedClosedCount = closedComplaints.filter(
+    (c) => c.status === 'Resolved - Citizen Verified' || (c.reopenCount || 0) > 0
+  ).length;
+  const participationRate =
+    closedCount > 0
+      ? Math.min(100, Math.round((participatedClosedCount / closedCount) * 100))
+      : null;
+
   // Minimum sample size threshold: at least 10 closed complaints required for statistical significance
   const hasEnoughData = closedCount >= 10;
 
@@ -57,12 +88,15 @@ export function calculateSingleWardStats(ward: any, wardComplaints: any[]): Ward
       code: ward.code || 'N/A',
       corporation: ward.corporation || 'Greater Bengaluru Authority',
       totalComplaints,
+      openCount,
+      overdueOpenCount,
+      overdueOpenRate,
       closedCount,
       citizenVerifiedCount,
       autoClosedCount,
       reopenedCount,
       citizenVerifiedRate: null,
-      participationRate: closedCount > 0 ? Math.round((citizenVerifiedCount / closedCount) * 100) : null,
+      participationRate,
       autoClosedRate: null,
       reopenRate: null,
       slaComplianceRate: null,
@@ -76,21 +110,33 @@ export function calculateSingleWardStats(ward: any, wardComplaints: any[]): Ward
   // Denominator is strictly closedCount (>= 10)
   const citizenVerifiedRate = citizenVerifiedCount / closedCount;
   const autoClosedRate = autoClosedCount / closedCount;
-  const participationRate = Math.round(citizenVerifiedRate * 100);
   const reopenRate = reopenedCount / closedCount;
 
-  // SLA Compliance: resolved within 72h benchmark
+  // SLA Compliance: resolved within category-specific SLA
+  // Clock runs from creation (createdAt) to the officer's resolve action
   let slaCompliantCount = 0;
   let totalResolutionTimeHours = 0;
 
   closedComplaints.forEach((c) => {
     const filedTime = new Date(c.createdAt).getTime();
-    const lastEvent = c.statusHistory?.[c.statusHistory.length - 1];
-    const resolveTime = lastEvent ? new Date(lastEvent.timestamp).getTime() : Date.now();
-    const durationHours = Math.max(1, (resolveTime - filedTime) / (1000 * 60 * 60));
+    let resolveTime = getOfficerResolveTimestamp(c);
+    if (resolveTime === null && Array.isArray(c.statusHistory) && c.statusHistory.length > 0) {
+      const lastEvent = c.statusHistory[c.statusHistory.length - 1];
+      if (lastEvent && lastEvent.timestamp) {
+        resolveTime = new Date(lastEvent.timestamp).getTime();
+      }
+    }
+    const finalResolveTime =
+      resolveTime !== null
+        ? resolveTime
+        : c.updatedAt
+        ? new Date(c.updatedAt).getTime()
+        : Date.now();
+    const durationHours = Math.max(1, (finalResolveTime - filedTime) / (1000 * 60 * 60));
 
     totalResolutionTimeHours += durationHours;
-    if (durationHours <= 72) {
+    const categorySlaHours = getCategorySlaHours(c.category);
+    if (durationHours <= categorySlaHours) {
       slaCompliantCount++;
     }
   });
@@ -113,6 +159,9 @@ export function calculateSingleWardStats(ward: any, wardComplaints: any[]): Ward
     code: ward.code || 'N/A',
     corporation: ward.corporation || 'Greater Bengaluru Authority',
     totalComplaints,
+    openCount,
+    overdueOpenCount,
+    overdueOpenRate,
     closedCount,
     citizenVerifiedCount,
     autoClosedCount,

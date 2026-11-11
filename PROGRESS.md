@@ -103,17 +103,41 @@ $$\text{CTI} = \text{round}\Big(100 \times \big[0.4 \times \text{CitizenVerified
    - $\text{ReopenRate} = \frac{\text{reopenedClosedCount}}{\text{closedCount}}$
    - **Penalty Effect:** Enters the formula as $0.4 \times (1 - \text{ReopenRate})$. Higher reopen rates directly penalize the ward's trust score. Complaints currently in dispute (`Reopened - Escalated`, `Disputed - Admin Review`) do not count until closed; once resolved and audited, they enter the closed denominator and contribute to the reopen penalty.
 
-3. **SLA Compliance Rate (`SLAComplianceRate`):**
-   - **Numerator:** Count of closed complaints whose resolution duration was within the 72-hour benchmark:
-     $$\text{durationHours} = \frac{\text{resolveTimestamp} - \text{createdAt}}{3600 \times 1000} \le 72$$
-     $$\text{slaCompliantCount} = \sum_{\text{closed}} [\text{durationHours} \le 72]$$
+3. **SLA Compliance Rate (`SLAComplianceRate`) & Category SLAs:**
+   - **Configuration (`lib/slaConfig.ts`):** Category-specific SLA limits:
+     - `Sanitation`: 24 hours
+     - `Streetlights`: 48 hours
+     - `Water Supply & Drainage`: 48 hours
+     - `Roads`: 72 hours
+     - `Others`: 72 hours (default fallback)
+   - **SLA Clock Specification:** The SLA clock runs from the moment of complaint creation (`createdAt`) to the officer's resolution action (when the officer submits on-site GPS verification and resolution proof, transitioning the ticket to `Pending Verification`).
+   - **Numerator:** Count of closed complaints whose resolution duration was within their category SLA limit:
+     $$\text{durationHours} = \frac{\text{officerResolveTimestamp} - \text{createdAt}}{3600 \times 1000} \le \text{categorySlaHours}$$
+     $$\text{slaCompliantCount} = \sum_{\text{closed}} [\text{durationHours} \le \text{categorySlaHours}]$$
    - **Denominator:** $\text{closedCount}$
    - $\text{SLAComplianceRate} = \frac{\text{slaCompliantCount}}{\text{closedCount}}$
 
-4. **Participation Rate & Auto-Closed Rate:**
-   - $\text{ParticipationRate} = \frac{\text{citizenVerifiedCount}}{\text{closedCount}} \times 100\%$
-   - $\text{AutoClosedRate} = \frac{\text{autoClosedCount}}{\text{closedCount}} \times 100\%$
-   - Note: $\text{citizenVerifiedCount} + \text{autoClosedCount} = \text{closedCount}$.
+4. **Citizen Participation Rate (`ParticipationRate`):**
+   - **Distinct Participation Guarantee:** Count of **distinct** closed complaints where the citizen actively participated (either verified the resolution OR contested/reopened it), divided by `closedCount`:
+     $$\text{participatedClosedCount} = \sum_{\text{closed}} [\text{c.status} = \text{'Resolved - Citizen Verified'} \lor (\text{c.reopenCount} || 0) > 0]$$
+     $$\text{ParticipationRate} = \min\left(100, \text{round}\left(\frac{\text{participatedClosedCount}}{\text{closedCount}} \times 100\right)\right)$$
+   - **Never Exceeds 100%:** Because `participatedClosedCount` is filtered from the finite set of closed complaints (`closedComplaints`), a complaint that was both reopened by the citizen and later verified is counted exactly once. Thus $\text{participatedClosedCount} \le \text{closedCount}$ strictly holds at all times.
+
+5. **Overdue Open Rate (`OverdueOpenRate`):**
+   - **Definition:** Real-time operational metric tracking open complaints that have exceeded their category SLA:
+     - *Open Complaints:* Tickets that are active in the redressal workflow: `!['Resolved - Citizen Verified', 'Resolved - Auto Closed', 'Rejected - Invalid'].includes(c.status)`.
+     - *Clock Behavior:* For tickets awaiting officer resolution (`Pending`, `In Progress`, `Reopened - Escalated`, `Disputed - Admin Review`), the clock runs continuously from `createdAt` to `now` (`Date.now()`). For tickets in `Pending Verification`, the clock evaluates whether the officer's resolve action was completed within SLA.
+     - *Formula:*
+       $$\text{OverdueOpenRate} = \text{round}\left(\frac{\text{overdueOpenCount}}{\text{openCount}} \times 100\right)$$
+   - **Handling Zero Open Complaints:** If $\text{openCount} = 0$, `overdueOpenRate` evaluates to `null` and displays gracefully in the UI as `0% (0 open)` without division-by-zero or `NaN`.
+   - **Leaderboard Placement:** Displayed directly adjacent to the CTI in both the top ward leaderboard highlight cards and the comprehensive municipal ranking audit table.
+
+6. **Cloudinary Signature String Verification:**
+   - The signing query string strictly uses verbatim `&timestamp` without character corruption (avoiding entity translation such as `&times;`):
+     ```typescript
+     const paramsToSign = `allowed_formats=${allowedFormats}&folder=${folder}&timestamp=${timestamp}${effectiveApiSecret}`;
+     const signature = crypto.createHash('sha1').update(paramsToSign).digest('hex');
+     ```
 
 ---
 
