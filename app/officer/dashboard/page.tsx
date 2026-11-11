@@ -20,6 +20,7 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import { calculateAllowedResolutionRadius } from '@/lib/geo';
+import { uploadToCloudinary } from '@/lib/cloudinaryClient';
 
 export default function OfficerDashboardPage() {
   const { data: session } = useSession();
@@ -36,6 +37,7 @@ export default function OfficerDashboardPage() {
   const [gpsLoading, setGpsLoading] = useState(false);
   const [resolutionRemarks, setResolutionRemarks] = useState('');
   const [resolutionPreview, setResolutionPreview] = useState<string | null>(null);
+  const [resolutionFile, setResolutionFile] = useState<File | null>(null);
   const [submittingResolution, setSubmittingResolution] = useState(false);
   const [resolutionError, setResolutionError] = useState<string | null>(null);
 
@@ -149,6 +151,7 @@ export default function OfficerDashboardPage() {
   const handlePhotoCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      setResolutionFile(file);
       const reader = new FileReader();
       reader.onloadend = () => {
         setResolutionPreview(reader.result as string);
@@ -173,6 +176,11 @@ export default function OfficerDashboardPage() {
 
     setSubmittingResolution(true);
     try {
+      let finalImageUrl = resolutionPreview;
+      if (resolutionFile) {
+        finalImageUrl = await uploadToCloudinary(resolutionFile);
+      }
+
       const res = await fetch(`/api/complaints/${resolvingComplaint._id}/resolve`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -180,7 +188,7 @@ export default function OfficerDashboardPage() {
           lat: officerGPS.lat,
           lng: officerGPS.lng,
           accuracy: officerGPS.accuracy,
-          resolutionImageUrl: resolutionPreview,
+          resolutionImageUrl: finalImageUrl,
           remarks: resolutionRemarks || 'Field work executed and inspected.',
         }),
       });

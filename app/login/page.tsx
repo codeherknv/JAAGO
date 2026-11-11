@@ -64,7 +64,7 @@ export default function LoginPage() {
           </p>
 
           <button
-            onClick={() => handleSignIn('officer.bellandur@bbmp.gov.in')}
+            onClick={() => handleSignIn('officer.bellandur@demo.jaago.app')}
             disabled={loading}
             className="w-full flex items-center justify-between p-3 rounded-xl border border-emerald-200 bg-emerald-50/50 hover:bg-emerald-50 text-left transition"
           >
@@ -85,7 +85,7 @@ export default function LoginPage() {
           </button>
 
           <button
-            onClick={() => handleSignIn('officer.hsr@bbmp.gov.in')}
+            onClick={() => handleSignIn('officer.hsr@demo.jaago.app')}
             disabled={loading}
             className="w-full flex items-center justify-between p-3 rounded-xl border border-teal-200 bg-teal-50/50 hover:bg-teal-50 text-left transition"
           >
@@ -106,7 +106,7 @@ export default function LoginPage() {
           </button>
 
           <button
-            onClick={() => handleSignIn('citizen.rahul@example.com')}
+            onClick={() => handleSignIn('citizen.rahul@demo.jaago.app')}
             disabled={loading}
             className="w-full flex items-center justify-between p-3 rounded-xl border border-blue-200 bg-blue-50/50 hover:bg-blue-50 text-left transition"
           >
@@ -125,7 +125,7 @@ export default function LoginPage() {
           </button>
 
           <button
-            onClick={() => handleSignIn('admin@jaago.kar.nic.in')}
+            onClick={() => handleSignIn('admin@demo.jaago.app')}
             disabled={loading}
             className="w-full flex items-center justify-between p-3 rounded-xl border border-purple-200 bg-purple-50/50 hover:bg-purple-50 text-left transition"
           >

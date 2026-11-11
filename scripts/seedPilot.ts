@@ -6,6 +6,7 @@ import { OfficerAllowList } from '../models/OfficerAllowList';
 import { User } from '../models/User';
 import { Complaint } from '../models/Complaint';
 import { Vote } from '../models/Vote';
+import { reconcileAllVotes } from '../lib/reconcileVotes';
 
 export const BENGALURU_WARDS = [
   {
@@ -113,7 +114,7 @@ export async function seedPilotDatabase() {
   const agencyMap = new Map(createdAgencies.map((a) => [a.shortName, a]));
   console.log(`Created ${createdAgencies.length} agencies:`, createdAgencies.map(a => a.shortName).join(', '));
 
-  console.log('Seeding Officer AllowList...');
+  console.log('Seeding Officer AllowList with @demo.jaago.app domains...');
   const bellandurWard = wardMap.get('W-150')!;
   const hsrWard = wardMap.get('W-174')!;
   const koramangalaWard = wardMap.get('W-151')!;
@@ -122,14 +123,14 @@ export async function seedPilotDatabase() {
 
   const allowListOfficers = [
     {
-      email: 'officer.bellandur@bbmp.gov.in',
+      email: 'officer.bellandur@demo.jaago.app',
       name: 'Ramesh Gowda (AEE Bellandur)',
       agencyId: bbmpRoads._id,
       assignedWardId: bellandurWard._id,
       isActive: true,
     },
     {
-      email: 'officer.hsr@bbmp.gov.in',
+      email: 'officer.hsr@demo.jaago.app',
       name: 'Sunita Rao (Health Inspector HSR)',
       agencyId: bbmpSwm._id,
       assignedWardId: hsrWard._id,
@@ -145,14 +146,14 @@ export async function seedPilotDatabase() {
   const usersToCreate = [
     {
       name: 'Civic Commissioner Admin',
-      email: 'admin@jaago.kar.nic.in',
+      email: 'admin@demo.jaago.app',
       password: passwordHash,
       role: 'admin',
       image: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=128&fit=crop&crop=faces',
     },
     {
       name: 'Ramesh Gowda (Officer)',
-      email: 'officer.bellandur@bbmp.gov.in',
+      email: 'officer.bellandur@demo.jaago.app',
       password: passwordHash,
       role: 'officer',
       assignedWardId: bellandurWard._id,
@@ -161,7 +162,7 @@ export async function seedPilotDatabase() {
     },
     {
       name: 'Sunita Rao (Officer)',
-      email: 'officer.hsr@bbmp.gov.in',
+      email: 'officer.hsr@demo.jaago.app',
       password: passwordHash,
       role: 'officer',
       assignedWardId: hsrWard._id,
@@ -170,17 +171,36 @@ export async function seedPilotDatabase() {
     },
     {
       name: 'Rahul Sharma',
-      email: 'citizen.rahul@example.com',
+      email: 'citizen.rahul@demo.jaago.app',
       password: passwordHash,
       role: 'citizen',
       image: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=128&fit=crop&crop=faces',
     },
     {
       name: 'Priya Venkatesh',
-      email: 'citizen.priya@example.com',
+      email: 'citizen.priya@demo.jaago.app',
       password: passwordHash,
       role: 'citizen',
       image: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=128&fit=crop&crop=faces',
+    },
+    // Seed auxiliary voters for consistent vote counts
+    {
+      name: 'Ananya Deshmukh',
+      email: 'voter1@demo.jaago.app',
+      password: passwordHash,
+      role: 'citizen',
+    },
+    {
+      name: 'Vikram Seth',
+      email: 'voter2@demo.jaago.app',
+      password: passwordHash,
+      role: 'citizen',
+    },
+    {
+      name: 'Kavita Nair',
+      email: 'voter3@demo.jaago.app',
+      password: passwordHash,
+      role: 'citizen',
     },
   ];
 
@@ -188,12 +208,15 @@ export async function seedPilotDatabase() {
   const userMap = new Map(createdUsers.map((u) => [u.email, u]));
   console.log(`Created ${createdUsers.length} initial users.`);
 
-  const rahul = userMap.get('citizen.rahul@example.com')!;
-  const priya = userMap.get('citizen.priya@example.com')!;
-  const ramesh = userMap.get('officer.bellandur@bbmp.gov.in')!;
-  const sunita = userMap.get('officer.hsr@bbmp.gov.in')!;
+  const rahul = userMap.get('citizen.rahul@demo.jaago.app')!;
+  const priya = userMap.get('citizen.priya@demo.jaago.app')!;
+  const ramesh = userMap.get('officer.bellandur@demo.jaago.app')!;
+  const sunita = userMap.get('officer.hsr@demo.jaago.app')!;
+  const voter1 = userMap.get('voter1@demo.jaago.app')!;
+  const voter2 = userMap.get('voter2@demo.jaago.app')!;
+  const voter3 = userMap.get('voter3@demo.jaago.app')!;
 
-  console.log('Seeding Initial Pilot Complaints & Votes...');
+  console.log('Seeding Initial Pilot Complaints...');
   const complaintsToCreate = [
     {
       title: 'Large Pothole near Green Glen Layout junction',
@@ -209,9 +232,9 @@ export async function seedPilotDatabase() {
       imageUrl: 'https://images.unsplash.com/photo-1515162816999-a0c47dc192f7?w=800&fit=crop',
       status: 'Pending' as const,
       reportedBy: rahul._id,
-      upvotesCount: 8,
+      upvotesCount: 3, // 3 matching votes: rahul, voter1, voter2
       reopenCount: 0,
-      priorityScore: 22.5,
+      priorityScore: 14.5,
       statusHistory: [
         {
           status: 'Pending' as const,
@@ -236,9 +259,9 @@ export async function seedPilotDatabase() {
       imageUrl: 'https://images.unsplash.com/photo-1611288875685-147054941d42?w=800&fit=crop',
       status: 'In Progress' as const,
       reportedBy: priya._id,
-      upvotesCount: 15,
+      upvotesCount: 4, // 4 matching votes: priya, voter1, voter2, voter3
       reopenCount: 0,
-      priorityScore: 31.2,
+      priorityScore: 16.0,
       statusHistory: [
         {
           status: 'Pending' as const,
@@ -271,9 +294,9 @@ export async function seedPilotDatabase() {
       resolutionImageUrl: 'https://images.unsplash.com/photo-1590674899484-d5640e854abe?w=800&fit=crop',
       status: 'Pending Verification' as const,
       reportedBy: rahul._id,
-      upvotesCount: 22,
+      upvotesCount: 3, // 3 matching votes: rahul, voter2, voter3
       reopenCount: 0,
-      priorityScore: 44.0,
+      priorityScore: 18.0,
       verificationDeadline: new Date(Date.now() + 84 * 3600 * 1000), // ~3.5 days left in 120h window
       statusHistory: [
         {
@@ -317,9 +340,9 @@ export async function seedPilotDatabase() {
       resolutionImageUrl: 'https://images.unsplash.com/photo-1517457373958-b7bdd4587205?w=800&fit=crop',
       status: 'Resolved - Citizen Verified' as const,
       reportedBy: priya._id,
-      upvotesCount: 19,
+      upvotesCount: 2, // 2 matching votes: priya, rahul
       reopenCount: 0,
-      priorityScore: 18.0,
+      priorityScore: 10.0,
       statusHistory: [
         {
           status: 'Pending' as const,
@@ -359,15 +382,30 @@ export async function seedPilotDatabase() {
   const createdComplaints = await Complaint.insertMany(complaintsToCreate);
   console.log(`Created ${createdComplaints.length} seed complaints.`);
 
-  // Seed initial vote records for atomic consistency
+  // Seed exact matching vote records for 100% database consistency
   const votes = [
+    // Complaint 0 (upvotes: 3)
     { complaintId: createdComplaints[0]._id, userId: rahul._id },
+    { complaintId: createdComplaints[0]._id, userId: voter1._id },
+    { complaintId: createdComplaints[0]._id, userId: voter2._id },
+    // Complaint 1 (upvotes: 4)
     { complaintId: createdComplaints[1]._id, userId: priya._id },
+    { complaintId: createdComplaints[1]._id, userId: voter1._id },
+    { complaintId: createdComplaints[1]._id, userId: voter2._id },
+    { complaintId: createdComplaints[1]._id, userId: voter3._id },
+    // Complaint 2 (upvotes: 3)
     { complaintId: createdComplaints[2]._id, userId: rahul._id },
+    { complaintId: createdComplaints[2]._id, userId: voter2._id },
+    { complaintId: createdComplaints[2]._id, userId: voter3._id },
+    // Complaint 3 (upvotes: 2)
     { complaintId: createdComplaints[3]._id, userId: priya._id },
+    { complaintId: createdComplaints[3]._id, userId: rahul._id },
   ];
   await Vote.insertMany(votes);
-  console.log(`Created ${votes.length} initial Vote records.`);
+  console.log(`Created ${votes.length} matching Vote records.`);
+
+  // Run reconciliation check to ensure 100% vote consistency
+  await reconcileAllVotes();
 
   console.log('--- Bengaluru Pilot Seeding Completed Successfully! ---');
 }

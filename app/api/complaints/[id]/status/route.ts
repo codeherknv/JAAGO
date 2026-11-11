@@ -1,32 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
 import { connectToDatabase } from '@/lib/mongodb';
 import { Complaint } from '@/models/Complaint';
-import { User } from '@/models/User';
+import { requireRole, formatApiError } from '@/lib/apiAuth';
+import { updateStatusSchema, ObjectIdSchema } from '@/lib/validations';
+
+export const dynamic = 'force-dynamic';
 
 export async function PATCH(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
-    const session = await getServerSession(authOptions);
-    const complaintId = params.id;
+    const officer = await requireRole(['officer', 'admin']);
+    const complaintId = ObjectIdSchema.parse(params.id);
+
     const body = await req.json();
-    const { status, remarks } = body;
-
-    const allowedTransitions = [
-      'In Progress',
-      'Pending',
-      'Rejected - Invalid',
-    ];
-
-    if (!allowedTransitions.includes(status)) {
-      return NextResponse.json(
-        { error: `Invalid transition to status: ${status}. For resolution, use /resolve.` },
-        { status: 400 }
-      );
-    }
+    const { status, remarks } = updateStatusSchema.parse(body);
 
     await connectToDatabase();
     const complaint = await Complaint.findById(complaintId);
@@ -34,21 +23,13 @@ export async function PATCH(
       return NextResponse.json({ error: 'Complaint not found' }, { status: 404 });
     }
 
-    let actorUser;
-    if (session?.user?.id) {
-      actorUser = await User.findById(session.user.id);
-    }
-    if (!actorUser) {
-      actorUser = await User.findOne({ role: 'officer' }) || (await User.findOne());
-    }
-
     complaint.status = status;
     complaint.statusHistory.push({
       status,
-      actorId: actorUser!._id,
-      role: actorUser?.role || 'officer',
+      actorId: officer.id as any,
+      role: officer.role,
       timestamp: new Date(),
-      remarks: remarks || `Status changed to ${status}`,
+      remarks: remarks || `Status transitioned to ${status}`,
     });
 
     await complaint.save();
@@ -58,9 +39,6 @@ export async function PATCH(
       complaint,
     });
   } catch (error: any) {
-    return NextResponse.json(
-      { error: 'Failed to update status', details: error.message },
-      { status: 500 }
-    );
+    return formatApiError(error);
   }
 }

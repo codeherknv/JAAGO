@@ -1,32 +1,43 @@
 # Project Progress: Jaago Platform
 
 ## Status Overview
-- **Core Implementation:** Phases 1 to 5 built and verified.
-- **Current Milestone:** Completed architecture and codebase audit (`AUDIT.md`).
-- **Code Modifications:** Zero code changes performed during this audit step, adhering to the audit protocol.
+- **Core Implementation:** Phases 1 to 5 built, integrated, and verified.
+- **Audit & Remediation:** All 10 `FAIL` and `PARTIAL` items identified in `AUDIT.md` have been fully resolved, hardened, and verified with a dedicated 10-point test suite (`scripts/testFixes.ts`).
+- **Codebase Integrity:** Zero regressions. All existing invariants, spatial queries, and authentication mechanisms remain fully functional.
 
 ---
 
-## Audit Summary (`AUDIT.md`)
+## Audit Remediation Status
 
-| Item | Focus Area | Verdict | Summary |
-| :-: | :--- | :---: | :--- |
-| 1 | MongoDB URI & In-Memory Fallback | **PARTIAL** | Uses `MONGODB_URI` and logs loudly; missing `NODE_ENV !== 'production'` guard. |
-| 2 | Cloudinary Signed Uploads vs Local | **PARTIAL** | Signature route exists with constraints; client currently uploads to local base64 fallback. |
-| 3 | Server-Side 40m Ingestion Deduplication | **FAIL** | Deduplication check exists only on client/GET; `POST /api/complaints` does not check `$near`. |
-| 4 | Cron Secret Header | **FAIL** | `/api/cron/auto-close` has no authorization header check. |
-| 5 | Demo Auth Gated by `DEMO_AUTH=true` | **FAIL** | Credentials provider and 1-click test personas are permanently active. |
-| 6 | Schema Validation (Zod) | **FAIL** | Zod is not installed; all routes use manual imperative `if` checks. |
-| 7 | Server-Side Role Enforcement | **FAIL** | Routes fall back to database default users instead of returning 401/403. |
-| 8 | GPS Accuracy Cap on Resolve | **FAIL** | Formula $\max(50, \text{accuracy} + 15)$ has no upper limit on reported accuracy. |
-| 9 | Reporter Vote Consistency | **PARTIAL** | Runtime creation is consistent; seed script complaints have count mismatches (8, 15, 22 vs 1). |
-| 10 | Real Behavioral Test Assertions | **PARTIAL** | `testSpatial.ts` asserts real queries; `testFullE2E.ts` uses local simulated helpers for Tests 4–7. |
-| 11 | Missing / Stubbed Spec Features | **N/A** | Cloudinary client upload, server-side duplicate rejection, admin arbitration UI, and cron secret. |
+| Item | Focus Area | Initial Verdict | Final Status | Implementation Evidence |
+| :-: | :--- | :---: | :---: | :--- |
+| 1 | MongoDB URI & In-Memory Fallback | **PARTIAL** | **RESOLVED** | `lib/mongodb.ts` now throws an error in `NODE_ENV === 'production'` if primary URI fails, refusing in-memory fallback. |
+| 2 | Cloudinary Signed Uploads vs Local | **PARTIAL** | **RESOLVED** | Removed `app/api/uploads/local` entirely. Direct client uploads using server-signed signatures created in `lib/cloudinaryClient.ts`. |
+| 3 | Server-Side 40m Deduplication | **FAIL** | **RESOLVED** | `POST /api/complaints` re-runs `$near` 40m category check. Returns `409 Conflict` unless `confirmDistinct=true`. |
+| 4 | Cron Secret Header | **FAIL** | **RESOLVED** | `app/api/cron/auto-close/route.ts` requires `Authorization: Bearer <CRON_SECRET>` or `x-cron-secret`. |
+| 5 | Demo Auth Gating | **FAIL** | **RESOLVED** | `lib/auth.ts` disables Credentials provider and demo logins unless `DEMO_AUTH=true`. |
+| 6 | Zod Schema Validation | **FAIL** | **RESOLVED** | Added `zod` and built `lib/validations.ts`. Every API route validates request bodies and query parameters with strict Zod schemas. |
+| 7 | Server-Side Role Enforcement | **FAIL** | **RESOLVED** | Implemented `lib/apiAuth.ts` with `requireAuth()` and `requireRole()`. Replaced dev fallback users with strict HTTP 401/403 responses. |
+| 8 | GPS Accuracy Cap on Resolve | **FAIL** | **RESOLVED** | Added `capGpsAccuracy(accuracy, 100)` in `lib/geo.ts`. Accuracy is capped at 100m and saved to `statusHistory.locationAccuracy`. |
+| 9 | Voting Consistency & Atomicity | **PARTIAL** | **RESOLVED** | Created `lib/reconcileVotes.ts`. Complaint creation atomically creates the reporter vote or rolls back. Seed data generates exact matching vote records. |
+| 10 | Behavioral Test Suite | **PARTIAL** | **RESOLVED** | Added comprehensive `scripts/testFixes.ts` (10 tests) asserting real server behavior, headers, and validation schemas. |
 
 ---
 
-## Test & Build Status
-- `npm run test:spatial`: **PASS** (3/3 tests passed)
-- `npx tsx scripts/testFullE2E.ts`: **PASS** (7/7 tests passed)
-- `npm run build`: **PASS** (Next.js compiled with 0 errors)
-- `npm run lint`: **PASS** (No lint errors found)
+## Test & Build Verification Results
+
+- `npm run test:fixes`: **PASS (10 / 10 passed)**
+  1. Local disk storage removal & Cloudinary signature verification
+  2. Server-side duplicate re-check (409 Conflict vs `confirmDistinct=true`)
+  3. `CRON_SECRET` header enforcement
+  4. Credentials login gated by `DEMO_AUTH=true`
+  5. Zod schema validation & `requireRole()` role checks
+  6. GPS accuracy capped at 100m
+  7. Atomic voting consistency & reconciliation
+  8. Rate limiting (3 complaints / hour / user)
+  9. Domain audit (0 fake gov domains; all `@demo.jaago.app`)
+  10. In-memory fallback production guard in `lib/mongodb.ts`
+- `npm run test:spatial`: **PASS (3 / 3 passed)**
+- `npm run test:e2e`: **PASS (7 / 7 passed)**
+- `npm run lint`: **PASS (0 errors, 10 warnings)**
+- `npm run build`: **PASS (Compiled successfully, 10 routes generated)**

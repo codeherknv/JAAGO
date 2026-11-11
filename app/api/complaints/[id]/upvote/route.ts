@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
 import { connectToDatabase } from '@/lib/mongodb';
 import { Complaint } from '@/models/Complaint';
 import { Vote } from '@/models/Vote';
-import { User } from '@/models/User';
 import { calculatePriorityScore } from '@/lib/geo';
+import { requireAuth, formatApiError } from '@/lib/apiAuth';
+import { ObjectIdSchema } from '@/lib/validations';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,8 +13,8 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
-    const session = await getServerSession(authOptions);
-    const complaintId = params.id;
+    const user = await requireAuth();
+    const complaintId = ObjectIdSchema.parse(params.id);
 
     await connectToDatabase();
 
@@ -24,41 +23,13 @@ export async function POST(
       return NextResponse.json({ error: 'Complaint not found' }, { status: 404 });
     }
 
-    // Resolve acting user ID: from session or body/fallback for testing
-    let userId = session?.user?.id;
-    if (!userId) {
-      try {
-        const body = await req.json();
-        if (body?.userId) {
-          userId = body.userId;
-        }
-      } catch {
-        // Body might be empty
-      }
-    }
-
-    if (!userId) {
-      // Use or create a test citizen user if unauthenticated demo
-      let defaultUser = await User.findOne({ role: 'citizen' });
-      if (!defaultUser) {
-        defaultUser = await User.create({
-          name: 'Demo Citizen Voter',
-          email: 'citizen.voter@jaago.in',
-          role: 'citizen',
-        });
-      }
-      userId = defaultUser._id.toString();
-    }
-
-    // Invariant 3: Scalable Atomic Upvoting
-    // 1. Attempt insertion into Vote collection with compound unique index { complaintId: 1, userId: 1 }
+    // Invariant 3: Scalable Atomic Upvoting via Vote unique compound index
     try {
       await Vote.create({
         complaintId,
-        userId,
+        userId: user.id,
       });
     } catch (voteErr: any) {
-      // MongoDB E11000 duplicate key error means user has already upvoted
       if (voteErr.code === 11000) {
         return NextResponse.json(
           {
@@ -72,7 +43,7 @@ export async function POST(
       throw voteErr;
     }
 
-    // 2. Perform atomic increment $inc: { upvotesCount: 1 }
+    // Atomic increment
     const updatedComplaint = await Complaint.findByIdAndUpdate(
       complaintId,
       { $inc: { upvotesCount: 1 } },
@@ -80,7 +51,6 @@ export async function POST(
     );
 
     if (updatedComplaint) {
-      // Recalculate priority score with new upvotes
       const newScore = calculatePriorityScore(
         updatedComplaint.category,
         updatedComplaint.upvotesCount,
@@ -97,11 +67,7 @@ export async function POST(
       alreadyUpvoted: false,
     });
   } catch (error: any) {
-    console.error('Error upvoting complaint:', error);
-    return NextResponse.json(
-      { error: 'Failed to record upvote', details: error.message },
-      { status: 500 }
-    );
+    return formatApiError(error);
   }
 }
 
@@ -110,28 +76,31 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
-    const session = await getServerSession(authOptions);
-    const complaintId = params.id;
+    const complaintId = ObjectIdSchema.parse(params.id);
     const { searchParams } = new URL(req.url);
-    const queryUserId = searchParams.get('userId') || session?.user?.id;
-
-    if (!queryUserId) {
-      return NextResponse.json({ hasUpvoted: false });
-    }
+    const queryUserId = searchParams.get('userId');
 
     await connectToDatabase();
+
+    let userId = queryUserId;
+    if (!userId) {
+      try {
+        const user = await requireAuth();
+        userId = user.id;
+      } catch {
+        return NextResponse.json({ hasUpvoted: false });
+      }
+    }
+
     const existingVote = await Vote.findOne({
       complaintId,
-      userId: queryUserId,
+      userId,
     });
 
     return NextResponse.json({
       hasUpvoted: !!existingVote,
     });
   } catch (error: any) {
-    return NextResponse.json(
-      { error: 'Failed to check vote status', details: error.message },
-      { status: 500 }
-    );
+    return formatApiError(error);
   }
 }

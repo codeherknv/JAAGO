@@ -28,10 +28,18 @@ export function calculateHaversineDistance(
 
 /**
  * Invariant 4: Location-Verified Resolution
- * Allowed Radius = Math.max(50, device_accuracy + 15).
+ * Accuracy is capped at 100m maximum to prevent GPS spoofing / unverified resolutions.
+ * Allowed Radius = Math.max(50, capped_accuracy + 15).
  */
+export const MAX_ALLOWED_GPS_ACCURACY = 100;
+
+export function capGpsAccuracy(accuracyMeters: number): number {
+  return Math.min(MAX_ALLOWED_GPS_ACCURACY, Math.max(0, accuracyMeters || 0));
+}
+
 export function calculateAllowedResolutionRadius(accuracyMeters: number): number {
-  return Math.max(50, (accuracyMeters || 0) + 15);
+  const cappedAccuracy = capGpsAccuracy(accuracyMeters);
+  return Math.max(50, cappedAccuracy + 15);
 }
 
 /**

@@ -88,6 +88,7 @@ async function runSpatialAndUpvoteTests() {
       },
     ],
   });
+  await Vote.create({ complaintId: complaint._id, userId: testCitizen._id });
 
   // Calculate coordinates 15 meters to the North
   // 1 deg latitude ≈ 111,139 meters

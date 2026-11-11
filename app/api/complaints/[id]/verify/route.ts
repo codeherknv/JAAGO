@@ -1,27 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
 import { connectToDatabase } from '@/lib/mongodb';
 import { Complaint } from '@/models/Complaint';
-import { User } from '@/models/User';
+import { requireAuth, formatApiError } from '@/lib/apiAuth';
+import { verifyComplaintSchema, ObjectIdSchema } from '@/lib/validations';
 import { calculatePriorityScore } from '@/lib/geo';
+
+export const dynamic = 'force-dynamic';
 
 export async function POST(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
-    const session = await getServerSession(authOptions);
-    const complaintId = params.id;
-    const body = await req.json();
-    const { action, remarks, imageUrl } = body;
+    const caller = await requireAuth();
+    const complaintId = ObjectIdSchema.parse(params.id);
 
-    if (!action || !['confirm', 'contest'].includes(action)) {
-      return NextResponse.json(
-        { error: "Valid action ('confirm' or 'contest') is required" },
-        { status: 400 }
-      );
-    }
+    const body = await req.json();
+    const { action, remarks, imageUrl } = verifyComplaintSchema.parse(body);
 
     await connectToDatabase();
     const complaint = await Complaint.findById(complaintId);
@@ -38,25 +33,13 @@ export async function POST(
       );
     }
 
-    // Resolve user (from session or demo citizen)
-    let actorUser;
-    if (session?.user?.id) {
-      actorUser = await User.findById(session.user.id);
-    }
-    if (!actorUser) {
-      actorUser = await User.findById(complaint.reportedBy) || (await User.findOne({ role: 'citizen' }));
-    }
-
-    const actorId = actorUser ? actorUser._id : complaint.reportedBy;
-    const actorRole = actorUser?.role || 'citizen';
-
     if (action === 'confirm') {
       // Citizen verifies resolution
       complaint.status = 'Resolved - Citizen Verified';
       complaint.statusHistory.push({
         status: 'Resolved - Citizen Verified',
-        actorId,
-        role: actorRole,
+        actorId: caller.id as any,
+        role: caller.role,
         timestamp: new Date(),
         remarks: remarks || 'Resolution confirmed and verified by citizen audit.',
       });
@@ -70,7 +53,7 @@ export async function POST(
     }
 
     if (action === 'contest') {
-      // Invariant 5: 5-Day Citizen Audit & Circuit Breaker
+      // Invariant 5: 5-Day Citizen Audit & Dispute Circuit Breaker
       // Reopens are capped at 2; the 3rd dispute moves the ticket to "Disputed - Admin Review"
       if (!remarks) {
         return NextResponse.json(
@@ -97,14 +80,14 @@ export async function POST(
 
       complaint.statusHistory.push({
         status: newStatus,
-        actorId,
-        role: actorRole,
+        actorId: caller.id as any,
+        role: caller.role,
         timestamp: new Date(),
         remarks: auditRemark,
         imageUrl: imageUrl || undefined,
       });
 
-      // Recalculate priority with higher reopen weight
+      // Recalculate priority score with higher reopen weight
       complaint.priorityScore = calculatePriorityScore(
         complaint.category,
         complaint.upvotesCount,
@@ -124,10 +107,6 @@ export async function POST(
       });
     }
   } catch (error: any) {
-    console.error('Error verifying complaint:', error);
-    return NextResponse.json(
-      { error: 'Failed to process verification', details: error.message },
-      { status: 500 }
-    );
+    return formatApiError(error);
   }
 }

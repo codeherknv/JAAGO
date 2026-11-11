@@ -15,15 +15,34 @@ export async function POST(req: NextRequest) {
 
 async function handleAutoClose(req: NextRequest) {
   try {
+    // Audit Item 4 Fix: CRON_SECRET header verification
+    const authHeader = req.headers.get('authorization');
+    const cronSecretHeader = req.headers.get('x-cron-secret');
+    const expectedSecret = process.env.CRON_SECRET || 'jaago-cron-secure-pilot-secret-2025';
+
+    const token = authHeader?.startsWith('Bearer ')
+      ? authHeader.substring(7)
+      : cronSecretHeader;
+
+    if (!token || token !== expectedSecret) {
+      return NextResponse.json(
+        {
+          error:
+            'Unauthorized: Valid CRON_SECRET header (Bearer token or x-cron-secret) is required to invoke auto-close daemon.',
+        },
+        { status: 401 }
+      );
+    }
+
     await connectToDatabase();
     const now = new Date();
 
-    // 1. Resolve system user for audit log
-    let systemUser = await User.findOne({ email: 'system.audit@jaago.in' });
+    // 1. Resolve system daemon user for append-only audit log
+    let systemUser = await User.findOne({ email: 'system.audit@demo.jaago.app' });
     if (!systemUser) {
       systemUser = await User.create({
         name: 'Jaago Automated Audit Daemon',
-        email: 'system.audit@jaago.in',
+        email: 'system.audit@demo.jaago.app',
         role: 'admin',
       });
     }

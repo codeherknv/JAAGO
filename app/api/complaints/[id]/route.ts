@@ -1,17 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/mongodb';
 import { Complaint } from '@/models/Complaint';
+import { ObjectIdSchema } from '@/lib/validations';
+import { formatApiError } from '@/lib/apiAuth';
 import '@/models/Ward';
 import '@/models/Agency';
 import '@/models/User';
+
+export const dynamic = 'force-dynamic';
 
 export async function GET(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
+    const complaintId = ObjectIdSchema.parse(params.id);
+
     await connectToDatabase();
-    const complaint = await Complaint.findById(params.id)
+    const complaint = await Complaint.findById(complaintId)
       .populate('wardId', 'name code corporation')
       .populate('agencyId', 'name shortName jurisdictionCategories')
       .populate('reportedBy', 'name email image')
@@ -24,9 +30,6 @@ export async function GET(
 
     return NextResponse.json({ complaint });
   } catch (error: any) {
-    return NextResponse.json(
-      { error: 'Failed to retrieve complaint', details: error.message },
-      { status: 500 }
-    );
+    return formatApiError(error);
   }
 }

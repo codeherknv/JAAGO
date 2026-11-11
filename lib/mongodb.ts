@@ -46,6 +46,11 @@ export async function connectToDatabase(): Promise<typeof mongoose> {
         });
         return conn;
       } catch (err) {
+        if (process.env.NODE_ENV === 'production') {
+          console.error(`[MongoDB] FATAL: Primary database connection to ${uri} failed in production environment. Refusing in-memory fallback.`, err);
+          throw err;
+        }
+
         console.warn(`[MongoDB] Primary connection to ${uri} failed. Attempting MongoDB Memory Server fallback for development/test environment...`);
         try {
           const { MongoMemoryServer } = await import('mongodb-memory-server');

@@ -1,13 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
 import { connectToDatabase } from '@/lib/mongodb';
 import { Complaint } from '@/models/Complaint';
 import { Ward } from '@/models/Ward';
 import { Agency } from '@/models/Agency';
-import { User } from '@/models/User';
 import { Vote } from '@/models/Vote';
-import { calculatePriorityScore } from '@/lib/geo';
+import { calculatePriorityScore, calculateHaversineDistance } from '@/lib/geo';
+import { requireAuth, formatApiError } from '@/lib/apiAuth';
+import { createComplaintSchema, listComplaintsQuerySchema } from '@/lib/validations';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,10 +14,16 @@ export async function GET(req: NextRequest) {
   try {
     await connectToDatabase();
     const { searchParams } = new URL(req.url);
-    const wardId = searchParams.get('wardId');
-    const category = searchParams.get('category');
-    const status = searchParams.get('status');
-    const limit = parseInt(searchParams.get('limit') || '50', 10);
+
+    const queryObj = {
+      wardId: searchParams.get('wardId') || undefined,
+      category: searchParams.get('category') || undefined,
+      status: searchParams.get('status') || undefined,
+      limit: searchParams.get('limit') || '50',
+    };
+
+    const validatedQuery = listComplaintsQuerySchema.parse(queryObj);
+    const { wardId, category, status, limit } = validatedQuery;
 
     const query: any = {};
     if (wardId) query.wardId = wardId;
@@ -38,44 +43,94 @@ export async function GET(req: NextRequest) {
       complaints,
     });
   } catch (error: any) {
-    console.error('Error listing complaints:', error);
-    return NextResponse.json(
-      { error: 'Failed to retrieve complaints', details: error.message },
-      { status: 500 }
-    );
+    return formatApiError(error);
   }
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
+    // 1. Enforce authentication server-side
+    const user = await requireAuth();
+
+    // 2. Validate input body using Zod
     const body = await req.json();
+    const validatedData = createComplaintSchema.parse(body);
 
-    const { title, description, category, lat, lng, address, imageUrl } = body;
-
-    if (!title || !description || !category || lat === undefined || lng === undefined || !imageUrl) {
-      return NextResponse.json(
-        { error: 'Missing required fields: title, description, category, lat, lng, imageUrl' },
-        { status: 400 }
-      );
-    }
-
-    const latitude = parseFloat(lat);
-    const longitude = parseFloat(lng);
-
-    if (isNaN(latitude) || isNaN(longitude)) {
-      return NextResponse.json({ error: 'Invalid coordinates provided' }, { status: 400 });
-    }
+    const { title, description, category, lat, lng, address, imageUrl, confirmDistinct } =
+      validatedData;
 
     await connectToDatabase();
 
-    // 1. Boundary Auto-Routing via GeoJSON Polygon Intersection ($geoIntersects)
+    // 3. Rate limit complaint creation (3 per hour per user)
+    const oneHourAgo = new Date(Date.now() - 3600 * 1000);
+    const recentSubmissionsCount = await Complaint.countDocuments({
+      reportedBy: user.id,
+      createdAt: { $gte: oneHourAgo },
+    });
+
+    if (recentSubmissionsCount >= 3) {
+      return NextResponse.json(
+        {
+          error:
+            'Rate limit exceeded: You may file a maximum of 3 complaints per hour to prevent spam. Please try again later.',
+          hourlyLimit: 3,
+          recentCount: recentSubmissionsCount,
+        },
+        { status: 429 }
+      );
+    }
+
+    // 4. Server-side duplicate re-check (409 Conflict unless client sends confirmDistinct=true)
+    if (!confirmDistinct) {
+      const duplicateComplaints = await Complaint.find({
+        location: {
+          $near: {
+            $geometry: {
+              type: 'Point',
+              coordinates: [lng, lat], // GeoJSON [longitude, latitude]
+            },
+            $maxDistance: 40, // 40-meter radius
+          },
+        },
+        category,
+        status: {
+          $nin: ['Resolved - Citizen Verified', 'Resolved - Auto Closed', 'Rejected - Invalid'],
+        },
+      })
+        .limit(5)
+        .lean();
+
+      if (duplicateComplaints.length > 0) {
+        const duplicates = duplicateComplaints.map((d: any) => ({
+          _id: d._id,
+          title: d.title,
+          description: d.description,
+          imageUrl: d.imageUrl,
+          upvotesCount: d.upvotesCount,
+          status: d.status,
+          distanceMeters: Math.round(
+            calculateHaversineDistance(lat, lng, d.location.coordinates[1], d.location.coordinates[0])
+          ),
+        }));
+
+        return NextResponse.json(
+          {
+            error: `Duplicate issue detected within 40m radius with matching category '${category}'. You can upvote the existing ticket or submit with confirmDistinct=true to override.`,
+            isDuplicate: true,
+            duplicates,
+          },
+          { status: 409 }
+        );
+      }
+    }
+
+    // 5. Boundary Auto-Routing via GeoJSON Polygon Intersection ($geoIntersects)
     const matchedWard = await Ward.findOne({
       boundary: {
         $geoIntersects: {
           $geometry: {
             type: 'Point',
-            coordinates: [longitude, latitude], // GeoJSON order: [lng, lat]
+            coordinates: [lng, lat],
           },
         },
       },
@@ -91,55 +146,37 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 2. Resolve matching civic agency
+    // 6. Resolve matching civic agency
     const matchedAgency = await Agency.findOne({
       jurisdictionCategories: category,
     });
 
-    // 3. Resolve Reporter User (from session or default demo citizen)
-    let reporterUser;
-    if (session?.user?.id) {
-      reporterUser = await User.findById(session.user.id);
-    }
-
-    if (!reporterUser) {
-      // Fallback to first citizen user or create demo reporter
-      reporterUser = await User.findOne({ role: 'citizen' });
-      if (!reporterUser) {
-        reporterUser = await User.create({
-          name: 'Demo Citizen Reporter',
-          email: 'citizen.reporter@jaago.in',
-          role: 'citizen',
-        });
-      }
-    }
-
-    // 4. Calculate initial Priority Score
+    // 7. Calculate initial Priority Score
     const priorityScore = calculatePriorityScore(category, 1, new Date(), 0);
 
-    // 5. Create Complaint with Invariant 7 (Append-Only Audit: push initial statusHistory)
+    // 8. Create Complaint with Invariant 7 (Append-Only Audit)
     const newComplaint = new Complaint({
       title,
       description,
       category,
       location: {
         type: 'Point',
-        coordinates: [longitude, latitude],
+        coordinates: [lng, lat],
       },
       address: address || `${matchedWard.name}, Bengaluru`,
       wardId: matchedWard._id,
       agencyId: matchedAgency?._id,
       imageUrl,
       status: 'Pending',
-      reportedBy: reporterUser._id,
+      reportedBy: user.id,
       upvotesCount: 1,
       reopenCount: 0,
       priorityScore,
       statusHistory: [
         {
           status: 'Pending',
-          actorId: reporterUser._id,
-          role: reporterUser.role || 'citizen',
+          actorId: user.id as any,
+          role: user.role || 'citizen',
           timestamp: new Date(),
           remarks: 'Complaint filed with verified geolocation and photograph.',
         },
@@ -148,14 +185,16 @@ export async function POST(req: NextRequest) {
 
     await newComplaint.save();
 
-    // 6. Record the reporter's initial upvote in the Vote collection
+    // 9. Atomic Vote consistency: create reporter's initial vote
     try {
       await Vote.create({
         complaintId: newComplaint._id,
-        userId: reporterUser._id,
+        userId: user.id,
       });
-    } catch (voteErr) {
-      console.warn('Initial vote record warning:', voteErr);
+    } catch (voteErr: any) {
+      // Reconcile consistency: if Vote insertion fails, roll back complaint
+      await Complaint.findByIdAndDelete(newComplaint._id);
+      throw new Error(`Failed to initialize consistent vote record: ${voteErr.message}`);
     }
 
     const populatedComplaint = await Complaint.findById(newComplaint._id)
@@ -171,10 +210,6 @@ export async function POST(req: NextRequest) {
       { status: 201 }
     );
   } catch (error: any) {
-    console.error('Error creating complaint:', error);
-    return NextResponse.json(
-      { error: 'Failed to create complaint', details: error.message },
-      { status: 500 }
-    );
+    return formatApiError(error);
   }
 }

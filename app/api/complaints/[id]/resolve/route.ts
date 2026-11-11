@@ -1,32 +1,35 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
 import { connectToDatabase } from '@/lib/mongodb';
 import { Complaint } from '@/models/Complaint';
-import { User } from '@/models/User';
-import { calculateHaversineDistance, calculateAllowedResolutionRadius } from '@/lib/geo';
+import { requireRole, formatApiError } from '@/lib/apiAuth';
+import { resolveComplaintSchema, ObjectIdSchema } from '@/lib/validations';
+import {
+  calculateHaversineDistance,
+  calculateAllowedResolutionRadius,
+  capGpsAccuracy,
+} from '@/lib/geo';
+
+export const dynamic = 'force-dynamic';
 
 export async function PATCH(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
-    const session = await getServerSession(authOptions);
-    const complaintId = params.id;
+    // 1. Enforce officer / admin role server-side
+    const officer = await requireRole(['officer', 'admin']);
+
+    // 2. Validate route param
+    const complaintId = ObjectIdSchema.parse(params.id);
+
+    // 3. Validate body with Zod
     const body = await req.json();
+    const validatedData = resolveComplaintSchema.parse(body);
+    const { lat, lng, accuracy, resolutionImageUrl, remarks } = validatedData;
 
-    const { lat, lng, accuracy, resolutionImageUrl, remarks } = body;
-
-    if (lat === undefined || lng === undefined || !resolutionImageUrl) {
-      return NextResponse.json(
-        { error: 'Officer GPS coordinates (lat, lng) and resolutionImageUrl are strictly required.' },
-        { status: 400 }
-      );
-    }
-
-    const officerLat = parseFloat(lat);
-    const officerLng = parseFloat(lng);
-    const deviceAccuracy = Math.max(0, parseFloat(accuracy) || 0);
+    // 4. Cap reported GPS accuracy at 100m
+    const cappedAccuracy = capGpsAccuracy(accuracy);
+    const allowedRadius = calculateAllowedResolutionRadius(cappedAccuracy);
 
     await connectToDatabase();
     const complaint = await Complaint.findById(complaintId);
@@ -34,20 +37,11 @@ export async function PATCH(
       return NextResponse.json({ error: 'Complaint not found' }, { status: 404 });
     }
 
-    // Invariant 4: Location-Verified Resolution
-    // Allowed Radius = Math.max(50, device_accuracy + 15).
-    const allowedRadius = calculateAllowedResolutionRadius(deviceAccuracy);
-
-    // Complaint coordinates in GeoJSON: [longitude, latitude]
+    // 5. Verify distance against original complaint coordinates [lng, lat]
     const complaintLng = complaint.location.coordinates[0];
     const complaintLat = complaint.location.coordinates[1];
 
-    const actualDistance = calculateHaversineDistance(
-      officerLat,
-      officerLng,
-      complaintLat,
-      complaintLng
-    );
+    const actualDistance = calculateHaversineDistance(lat, lng, complaintLat, complaintLng);
 
     if (actualDistance > allowedRadius) {
       return NextResponse.json(
@@ -56,52 +50,36 @@ export async function PATCH(
             actualDistance
           )}m away from the incident location. Maximum allowed radius is ${Math.round(
             allowedRadius
-          )}m (accuracy: ±${Math.round(deviceAccuracy)}m + 15m threshold). Field officers must be physically on-site to record resolution.`,
+          )}m (accuracy: ±${Math.round(cappedAccuracy)}m + 15m threshold). Field officers must be physically on-site to record resolution.`,
           distanceMeters: Math.round(actualDistance),
           allowedRadiusMeters: Math.round(allowedRadius),
-          deviceAccuracy: Math.round(deviceAccuracy),
+          reportedAccuracyMeters: accuracy,
+          cappedAccuracyMeters: cappedAccuracy,
         },
         { status: 403 }
       );
     }
 
-    // Resolve Officer User
-    let officerUser;
-    if (session?.user?.id) {
-      officerUser = await User.findById(session.user.id);
-    }
-    if (!officerUser) {
-      // Demo fallback officer
-      officerUser = await User.findOne({ role: 'officer' });
-      if (!officerUser) {
-        officerUser = await User.create({
-          name: 'Demo Field Officer',
-          email: 'officer.field@bbmp.gov.in',
-          role: 'officer',
-        });
-      }
-    }
-
-    // Invariant 5: Resolving moves ticket to "Pending Verification" (120-hour window)
-    const verificationDeadline = new Date(Date.now() + 120 * 60 * 60 * 1000); // 120 hours / 5 days
+    // 6. Transition to 'Pending Verification' with 120-hour window
+    const verificationDeadline = new Date(Date.now() + 120 * 60 * 60 * 1000);
 
     complaint.status = 'Pending Verification';
     complaint.resolutionImageUrl = resolutionImageUrl;
     complaint.verificationDeadline = verificationDeadline;
 
-    // Invariant 7: Append-Only Audit
+    // 7. Store capped accuracy in statusHistory (Invariant 7)
     complaint.statusHistory.push({
       status: 'Pending Verification',
-      actorId: officerUser._id,
-      role: 'officer',
+      actorId: officer.id as any,
+      role: officer.role,
       timestamp: new Date(),
       remarks:
         remarks ||
         `Resolution proof captured on-site (${Math.round(actualDistance)}m away, GPS accuracy ±${Math.round(
-          deviceAccuracy
+          cappedAccuracy
         )}m). Submitted to 120h citizen audit.`,
       imageUrl: resolutionImageUrl,
-      locationAccuracy: Math.round(deviceAccuracy),
+      locationAccuracy: cappedAccuracy,
       resolutionDistanceMeters: Math.round(actualDistance),
     });
 
@@ -112,12 +90,9 @@ export async function PATCH(
       complaint,
       distanceMeters: Math.round(actualDistance),
       allowedRadiusMeters: Math.round(allowedRadius),
+      cappedAccuracyMeters: cappedAccuracy,
     });
   } catch (error: any) {
-    console.error('Resolution error:', error);
-    return NextResponse.json(
-      { error: 'Failed to record resolution', details: error.message },
-      { status: 500 }
-    );
+    return formatApiError(error);
   }
 }

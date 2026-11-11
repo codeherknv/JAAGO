@@ -2,33 +2,23 @@ import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/mongodb';
 import { Complaint } from '@/models/Complaint';
 import { calculateHaversineDistance } from '@/lib/geo';
+import { nearbyQuerySchema } from '@/lib/validations';
+import { formatApiError } from '@/lib/apiAuth';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const latStr = searchParams.get('lat');
-    const lngStr = searchParams.get('lng');
-    const category = searchParams.get('category');
-    const maxDistance = parseFloat(searchParams.get('maxDistance') || '40'); // Default 40 meters
+    const queryObj = {
+      lat: searchParams.get('lat'),
+      lng: searchParams.get('lng'),
+      category: searchParams.get('category') || undefined,
+      maxDistance: searchParams.get('maxDistance') || '40',
+    };
 
-    if (!latStr || !lngStr) {
-      return NextResponse.json(
-        { error: 'Query parameters lat and lng are required.' },
-        { status: 400 }
-      );
-    }
-
-    const lat = parseFloat(latStr);
-    const lng = parseFloat(lngStr);
-
-    if (isNaN(lat) || isNaN(lng)) {
-      return NextResponse.json(
-        { error: 'lat and lng must be valid floating point numbers.' },
-        { status: 400 }
-      );
-    }
+    const validated = nearbyQuerySchema.parse(queryObj);
+    const { lat, lng, category, maxDistance } = validated;
 
     await connectToDatabase();
 
@@ -48,7 +38,7 @@ export async function GET(req: NextRequest) {
       },
     };
 
-    if (category) {
+    if (category && category !== 'all') {
       query.category = category;
     }
 
@@ -84,10 +74,6 @@ export async function GET(req: NextRequest) {
       searchRadiusMeters: maxDistance,
     });
   } catch (error: any) {
-    console.error('Error fetching nearby complaints:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch nearby complaints', details: error.message },
-      { status: 500 }
-    );
+    return formatApiError(error);
   }
 }

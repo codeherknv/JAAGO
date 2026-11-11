@@ -16,6 +16,7 @@ import {
   ExternalLink,
   ShieldAlert,
 } from 'lucide-react';
+import { uploadToCloudinary } from '@/lib/cloudinaryClient';
 
 const CATEGORIES = [
   'Roads',
@@ -54,6 +55,7 @@ export default function ReportComplaintPage() {
   // Deduplication Modal
   const [duplicateMatches, setDuplicateMatches] = useState<any[]>([]);
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
+  const [confirmDistinct, setConfirmDistinct] = useState(false);
   const [upvotingExisting, setUpvotingExisting] = useState(false);
   const [upvoteSuccessMessage, setUpvoteSuccessMessage] = useState<string | null>(null);
 
@@ -190,21 +192,10 @@ export default function ReportComplaintPage() {
 
     setSubmitting(true);
     try {
-      // 1. Upload image to local endpoint (or signed Cloudinary)
+      // 1. Direct Cloudinary upload with server-signed parameters and 5MB limit
       let uploadedUrl = imagePreview;
       if (imageFile) {
-        const formData = new FormData();
-        formData.append('file', imageFile);
-
-        const uploadRes = await fetch('/api/uploads/local', {
-          method: 'POST',
-          body: formData,
-        });
-
-        if (uploadRes.ok) {
-          const uploadData = await uploadRes.json();
-          uploadedUrl = uploadData.url;
-        }
+        uploadedUrl = await uploadToCloudinary(imageFile);
       }
 
       // 2. Submit complaint
@@ -219,10 +210,20 @@ export default function ReportComplaintPage() {
           lng: location.lng,
           address: address || 'Near captured coordinates',
           imageUrl: uploadedUrl,
+          confirmDistinct,
         }),
       });
 
       const data = await res.json();
+
+      if (res.status === 409) {
+        // Server-side duplicate re-check intercepted submission
+        if (data.duplicates && data.duplicates.length > 0) {
+          setDuplicateMatches(data.duplicates);
+          setShowDuplicateModal(true);
+        }
+        throw new Error(data.error || 'Duplicate issue detected nearby within 40m.');
+      }
 
       if (!res.ok) {
         throw new Error(data.error || 'Failed to submit complaint');
@@ -562,7 +563,10 @@ export default function ReportComplaintPage() {
             <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
               <button
                 type="button"
-                onClick={() => setShowDuplicateModal(false)}
+                onClick={() => {
+                  setConfirmDistinct(true);
+                  setShowDuplicateModal(false);
+                }}
                 className="text-xs font-semibold text-slate-500 hover:text-slate-800 px-3 py-2 rounded-lg hover:bg-slate-200/60 transition"
               >
                 No, this is a distinct issue. Continue filing.

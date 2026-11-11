@@ -90,7 +90,7 @@ async function runEndToEndVerification() {
 
   const testUser = await User.create({
     name: 'Unique Test Voter',
-    email: `unique.voter.${Date.now()}@jaago.in`,
+    email: `unique.voter.${Date.now()}@demo.jaago.app`,
     role: 'citizen',
   });
 
