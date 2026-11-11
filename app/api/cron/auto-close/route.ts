@@ -60,20 +60,17 @@ async function handleAutoClose(req: NextRequest) {
     const complaintsNeedingReminder = await Complaint.find({
       status: 'Pending Verification',
       verificationDeadline: { $lte: fortyEightHoursFromNow, $gt: now },
+      $or: [{ reminderSentAt: { $exists: false } }, { reminderSentAt: null }],
     });
 
     let reminderCount = 0;
     for (const complaint of complaintsNeedingReminder) {
-      // Check if reminder was already dispatched to prevent spam
-      const existingReminder = await Notification.findOne({
-        complaintId: complaint._id,
-        type: 'reminder',
-      });
+      // Mark reminderSentAt on Complaint directly to guarantee idempotent single dispatch
+      complaint.reminderSentAt = now;
+      await complaint.save();
 
-      if (!existingReminder) {
-        await notify72hReminder(complaint.reportedBy.toString(), complaint);
-        reminderCount++;
-      }
+      await notify72hReminder(complaint.reportedBy.toString(), complaint);
+      reminderCount++;
     }
 
     // 3. Query complaints in 'Pending Verification' whose 120-hour window has expired

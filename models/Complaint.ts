@@ -48,6 +48,7 @@ export interface IComplaint extends Document {
   reopenCount: number;
   priorityScore: number;
   verificationDeadline?: Date;
+  reminderSentAt?: Date;
   statusHistory: IStatusHistory[];
   createdAt: Date;
   updatedAt: Date;
@@ -132,6 +133,7 @@ const ComplaintSchema = new Schema<IComplaint>(
     reopenCount: { type: Number, default: 0 },
     priorityScore: { type: Number, default: 0, index: -1 },
     verificationDeadline: { type: Date, index: true },
+    reminderSentAt: { type: Date, index: true },
     statusHistory: [StatusHistorySchema],
   },
   { timestamps: true }

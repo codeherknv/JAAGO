@@ -54,9 +54,11 @@ export async function POST(req: Request) {
     const effectiveCloudName = cloudName || 'jaago-pilot';
 
     const timestamp = Math.round(new Date().getTime() / 1000);
+    const allowedFormats = 'jpg,jpeg,png,webp';
 
-    // Cloudinary signature parameters sorted alphabetically
-    const paramsToSign = `folder=${folder}&timestamp=${timestamp}${effectiveApiSecret}`;
+    // Cloudinary signature parameters sorted alphabetically:
+    // 1. allowed_formats, 2. folder, 3. timestamp
+    const paramsToSign = `allowed_formats=${allowedFormats}&folder=${folder}&timestamp=${timestamp}${effectiveApiSecret}`;
     const signature = crypto.createHash('sha1').update(paramsToSign).digest('hex');
 
     return NextResponse.json({
@@ -65,8 +67,8 @@ export async function POST(req: Request) {
       apiKey: effectiveApiKey,
       cloudName: effectiveCloudName,
       folder,
+      allowed_formats: allowedFormats,
       maxFileSizeBytes: 5 * 1024 * 1024, // 5MB limit
-      allowedFormats: ['jpg', 'jpeg', 'png', 'webp'],
     });
   } catch (error: any) {
     return formatApiError(error);

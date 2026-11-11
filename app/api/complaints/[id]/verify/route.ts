@@ -3,7 +3,7 @@ import { connectToDatabase } from '@/lib/mongodb';
 import { Complaint } from '@/models/Complaint';
 import { User } from '@/models/User';
 import { requireAuth, formatApiError } from '@/lib/apiAuth';
-import { verifyComplaintSchema, ObjectIdSchema } from '@/lib/validations';
+import { verifyComplaintSchema, ObjectIdSchema, verifyCloudinaryAssetSize } from '@/lib/validations';
 import { calculatePriorityScore } from '@/lib/geo';
 import { notifyReopen } from '@/lib/notifications';
 
@@ -19,6 +19,16 @@ export async function POST(
 
     const body = await req.json();
     const { action, remarks, imageUrl } = verifyComplaintSchema.parse(body);
+
+    if (imageUrl) {
+      const isValidSize = await verifyCloudinaryAssetSize(imageUrl);
+      if (!isValidSize) {
+        return NextResponse.json(
+          { error: 'Contest photo proof exceeds the strict 5MB limit or is inaccessible.' },
+          { status: 400 }
+        );
+      }
+    }
 
     await connectToDatabase();
     const complaint = await Complaint.findById(complaintId);

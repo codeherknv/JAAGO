@@ -36,14 +36,20 @@ export function getAuthProviders() {
           // Check OfficerAllowList first to ensure role synchronization
           const allowEntry = await OfficerAllowList.findOne({ email, isActive: true });
 
+          // Check if email matches configured ADMIN_EMAIL environment variable
+          const configuredAdminEmail = process.env.ADMIN_EMAIL?.toLowerCase().trim();
+          const isAdminEmail = Boolean(configuredAdminEmail && email === configuredAdminEmail);
+
           if (!user) {
             // If user doesn't exist yet, auto-provision user account
+            // Admin role is strictly restricted to ADMIN_EMAIL or seeded admin; public signups default to citizen
+            const initialRole = isAdminEmail ? 'admin' : allowEntry ? 'officer' : 'citizen';
             const hashedPassword = await bcrypt.hash(credentials.password || 'password123', 10);
             user = await User.create({
               name: allowEntry ? allowEntry.name : email.split('@')[0],
               email,
               password: hashedPassword,
-              role: allowEntry ? 'officer' : 'citizen',
+              role: initialRole,
               assignedWardId: allowEntry ? allowEntry.assignedWardId : undefined,
               agencyId: allowEntry ? allowEntry.agencyId : undefined,
             });
@@ -106,17 +112,21 @@ export const authOptions: NextAuthOptions = {
       const email = user.email.toLowerCase().trim();
       const allowEntry = await OfficerAllowList.findOne({ email, isActive: true });
 
+      const configuredAdminEmail = process.env.ADMIN_EMAIL?.toLowerCase().trim();
+      const isAdminEmail = Boolean(configuredAdminEmail && email === configuredAdminEmail);
+
       let dbUser = await User.findOne({ email });
       if (!dbUser) {
+        const initialRole = isAdminEmail ? 'admin' : allowEntry ? 'officer' : 'citizen';
         dbUser = await User.create({
           name: user.name || email.split('@')[0],
           email,
           image: user.image,
-          role: allowEntry ? 'officer' : 'citizen',
+          role: initialRole,
           assignedWardId: allowEntry?.assignedWardId,
           agencyId: allowEntry?.agencyId,
         });
-      } else if (allowEntry && dbUser.role !== 'officer') {
+      } else if (allowEntry && dbUser.role !== 'officer' && dbUser.role !== 'admin') {
         dbUser.role = 'officer';
         dbUser.assignedWardId = allowEntry.assignedWardId;
         dbUser.agencyId = allowEntry.agencyId;

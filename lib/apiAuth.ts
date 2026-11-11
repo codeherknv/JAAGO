@@ -36,8 +36,12 @@ export async function requireAuth(req?: Request): Promise<AuthenticatedUser> {
         email: req.headers.get('x-test-user-email') || 'test@demo.jaago.app',
         name: 'Test Runner User',
         role: testUserRole,
+        assignedWardId: req.headers.get('x-test-assigned-ward') || undefined,
+        agencyId: req.headers.get('x-test-agency-id') || undefined,
       };
     }
+    // In standalone test invocation, a request without x-test-user-id represents an unauthenticated/anonymous client
+    throw new AuthError('Authentication required. Please sign in.', 401);
   }
 
   const session = await getServerSession(authOptions);

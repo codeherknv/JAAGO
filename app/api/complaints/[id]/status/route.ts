@@ -23,6 +23,24 @@ export async function PATCH(
       return NextResponse.json({ error: 'Complaint not found' }, { status: 404 });
     }
 
+    // Officer Ward Jurisdiction Guard:
+    // Field officers can only modify complaints within their assigned ward.
+    if (officer.role === 'officer') {
+      if (
+        !officer.assignedWardId ||
+        !complaint.wardId ||
+        officer.assignedWardId.toString() !== complaint.wardId.toString()
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              'Forbidden: Officers are restricted to updating status of complaints within their assigned ward jurisdiction.',
+          },
+          { status: 403 }
+        );
+      }
+    }
+
     complaint.status = status;
     complaint.statusHistory.push({
       status,

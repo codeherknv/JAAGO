@@ -75,33 +75,74 @@ export const imageProofSchema = z
   );
 
 /**
- * Server-side asset size verifier for Cloudinary uploads:
- * In live/production/development, performs an HTTP HEAD request to res.cloudinary.com to check Content-Length.
- * If Content-Length exceeds 5MB (5 * 1024 * 1024 bytes), returns false.
- * For base64 data URIs in test mode, computes decoded byte size directly.
+ * Strips on-the-fly Cloudinary transformation parameters from a delivery URL
+ * to target the original uploaded asset for authoritative HEAD size/format checks.
+ * E.g. https://res.cloudinary.com/cloud/image/upload/w_500,c_fill,q_auto/v12345/jaago_complaints/abc.jpg
+ * -> https://res.cloudinary.com/cloud/image/upload/v12345/jaago_complaints/abc.jpg
+ */
+export function getOriginalCloudinaryUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname !== 'res.cloudinary.com') return url;
+
+    const pathname = parsed.pathname;
+    const uploadPrefix = '/image/upload/';
+    const uploadIdx = pathname.indexOf(uploadPrefix);
+    if (uploadIdx === -1) return url;
+
+    const prefix = pathname.substring(0, uploadIdx + uploadPrefix.length);
+    const remainder = pathname.substring(uploadIdx + uploadPrefix.length);
+
+    // Asset identifier matches: optional version (v\d+/) followed by jaago_complaints/...
+    const assetMatch = remainder.match(/((?:v\d+\/)?jaago_complaints\/.*)$/i);
+    if (assetMatch) {
+      parsed.pathname = prefix + assetMatch[1];
+      parsed.search = '';
+      return parsed.toString();
+    }
+    return url;
+  } catch {
+    return url;
+  }
+}
+
+/**
+ * Server-side asset size and format verifier for Cloudinary uploads:
+ * In live/production/development, performs an HTTP HEAD request to the ORIGINAL asset URL on res.cloudinary.com.
+ * Rejection conditions:
+ * - HEAD request fails (non-2xx response or network error)
+ * - Content-Length header is missing or invalid
+ * - Content-Length exceeds 5MB (5 * 1024 * 1024 bytes)
+ * For base64 data URIs (in test mode only), computes decoded byte size directly.
  */
 export async function verifyCloudinaryAssetSize(url: string): Promise<boolean> {
   if (url.startsWith('data:')) {
     if (process.env.NODE_ENV !== 'test') return false;
     const base64Data = url.split(',')[1] || '';
     const sizeInBytes = Math.ceil((base64Data.length * 3) / 4);
-    return sizeInBytes <= 5 * 1024 * 1024;
+    return sizeInBytes > 0 && sizeInBytes <= 5 * 1024 * 1024;
   }
 
   try {
-    const res = await fetch(url, { method: 'HEAD' });
-    const contentLength = res.headers.get('content-length');
-    if (contentLength) {
-      const bytes = parseInt(contentLength, 10);
-      if (bytes > 5 * 1024 * 1024) {
-        return false;
-      }
+    const originalUrl = getOriginalCloudinaryUrl(url);
+    const res = await fetch(originalUrl, { method: 'HEAD' });
+    if (!res.ok) {
+      return false; // HEAD request failed (e.g. 404, 403, 500)
     }
+
+    const contentLength = res.headers.get('content-length');
+    if (!contentLength) {
+      return false; // Content-Length header is missing
+    }
+
+    const bytes = parseInt(contentLength, 10);
+    if (isNaN(bytes) || bytes <= 0 || bytes > 5 * 1024 * 1024) {
+      return false; // Exceeds 5MB or invalid
+    }
+
     return true;
   } catch {
-    // In test environment or offline networks where remote DNS isn't accessible, allow URL structure
-    if (process.env.NODE_ENV === 'test') return true;
-    return false;
+    return false; // Network/fetch error: reject upload
   }
 }
 

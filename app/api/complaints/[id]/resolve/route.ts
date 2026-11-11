@@ -59,6 +59,24 @@ export async function PATCH(
       return NextResponse.json({ error: 'Complaint not found' }, { status: 404 });
     }
 
+    // Officer Ward Jurisdiction Guard:
+    // Field officers can only resolve complaints within their assigned ward.
+    if (officer.role === 'officer') {
+      if (
+        !officer.assignedWardId ||
+        !complaint.wardId ||
+        officer.assignedWardId.toString() !== complaint.wardId.toString()
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              'Forbidden: Officers are restricted to resolving complaints within their assigned ward jurisdiction.',
+          },
+          { status: 403 }
+        );
+      }
+    }
+
     // 5. Verify distance against original complaint coordinates [lng, lat]
     const complaintLng = complaint.location.coordinates[0];
     const complaintLat = complaint.location.coordinates[1];
@@ -88,6 +106,7 @@ export async function PATCH(
     complaint.status = 'Pending Verification';
     complaint.resolutionImageUrl = resolutionImageUrl;
     complaint.verificationDeadline = verificationDeadline;
+    complaint.reminderSentAt = undefined;
 
     // 7. Store capped accuracy in statusHistory (Invariant 7)
     complaint.statusHistory.push({

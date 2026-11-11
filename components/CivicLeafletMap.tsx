@@ -57,8 +57,9 @@ export default function CivicLeafletMap({
   const defaultCenter: [number, number] = [12.925, 77.655];
   const defaultZoom = 13;
 
-  // Filter complaints
+  // Filter complaints (strictly exclude any tickets without wardId)
   const filteredComplaints = complaints.filter((c) => {
+    if (!c.wardId) return false;
     const matchesCategory = selectedCategory === 'all' || c.category === selectedCategory;
     const matchesWard = !selectedWardId || c.wardId?._id === selectedWardId;
     return matchesCategory && matchesWard;

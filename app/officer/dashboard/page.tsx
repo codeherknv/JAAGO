@@ -64,14 +64,18 @@ export default function OfficerDashboardPage() {
 
       const res = await fetch(url);
       const data = await res.json();
-      setComplaints(data.complaints || []);
+      // Exclude unassigned/unrouted complaints from officer views (handled exclusively in admin triage)
+      const validComplaints = (data.complaints || []).filter(
+        (c: any) => c.wardId && (c.wardId._id || typeof c.wardId === 'string')
+      );
+      setComplaints(validComplaints);
 
       // 2. Extract unique wards for filter
       const allComplaintsRes = await fetch('/api/complaints?limit=100');
       const allData = await allComplaintsRes.json();
       const wardMap = new Map();
       (allData.complaints || []).forEach((c: any) => {
-        if (c.wardId) {
+        if (c.wardId && c.wardId._id) {
           wardMap.set(c.wardId._id, c.wardId);
         }
       });

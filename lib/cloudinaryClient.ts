@@ -30,7 +30,7 @@ export async function uploadToCloudinary(file: File): Promise<string> {
   }
 
   const signData = await signRes.json();
-  const { signature, timestamp, apiKey, cloudName, folder } = signData;
+  const { signature, timestamp, apiKey, cloudName, folder, allowed_formats } = signData;
 
   // 2. Direct upload to Cloudinary API
   const formData = new FormData();
@@ -39,6 +39,9 @@ export async function uploadToCloudinary(file: File): Promise<string> {
   formData.append('timestamp', timestamp.toString());
   formData.append('signature', signature);
   formData.append('folder', folder);
+  if (allowed_formats) {
+    formData.append('allowed_formats', allowed_formats);
+  }
 
   try {
     const cloudRes = await fetch(

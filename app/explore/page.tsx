@@ -46,12 +46,16 @@ export default function ExplorePage() {
     try {
       const res = await fetch('/api/complaints?limit=150');
       const data = await res.json();
-      setComplaints(data.complaints || []);
+      // Ensure complaints with no wardId are excluded from the public explore map
+      const validComplaints = (data.complaints || []).filter(
+        (c: any) => c.wardId && (c.wardId._id || typeof c.wardId === 'string')
+      );
+      setComplaints(validComplaints);
 
       // Extract unique wards
       const map = new Map();
-      (data.complaints || []).forEach((c: any) => {
-        if (c.wardId) map.set(c.wardId._id, c.wardId);
+      validComplaints.forEach((c: any) => {
+        if (c.wardId && c.wardId._id) map.set(c.wardId._id, c.wardId);
       });
       setWards(Array.from(map.values()));
     } catch (err) {

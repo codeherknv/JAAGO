@@ -11,13 +11,16 @@ import { OfficerAllowList } from '../models/OfficerAllowList';
 import { Notification } from '../models/Notification';
 import { seedPilotDatabase } from './seedPilot';
 import { reconcileAllVotes } from '../lib/reconcileVotes';
-import { imageProofSchema, verifyCloudinaryAssetSize } from '../lib/validations';
+import { imageProofSchema, verifyCloudinaryAssetSize, getOriginalCloudinaryUrl } from '../lib/validations';
+import { calculateSingleWardStats, rankWardStats, getLeaderboardData } from '../lib/leaderboard';
+import { getAuthProviders } from '../lib/auth';
 
 // Import real route handlers
 import { POST as signUploadPOST } from '../app/api/uploads/sign/route';
-import { POST as complaintsPOST } from '../app/api/complaints/route';
+import { GET as complaintsGET, POST as complaintsPOST } from '../app/api/complaints/route';
 import { POST as autoClosePOST } from '../app/api/cron/auto-close/route';
 import { PATCH as resolvePATCH } from '../app/api/complaints/[id]/resolve/route';
+import { PATCH as statusPATCH } from '../app/api/complaints/[id]/status/route';
 import { POST as verifyPOST } from '../app/api/complaints/[id]/verify/route';
 
 // Admin route handlers
@@ -28,6 +31,7 @@ import { PATCH as adminAssignPATCH } from '../app/api/admin/complaints/[id]/assi
 import { GET as adminDisputesGET } from '../app/api/admin/disputes/route';
 import { PATCH as adminArbitratePATCH } from '../app/api/admin/complaints/[id]/arbitrate/route';
 import { PATCH as adminRejectPATCH } from '../app/api/admin/complaints/[id]/reject/route';
+import { GET as adminMetadataGET } from '../app/api/admin/metadata/route';
 
 async function runAuditFixesVerification() {
   (process.env as any).NODE_ENV = 'test';
@@ -40,13 +44,26 @@ async function runAuditFixesVerification() {
   await seedPilotDatabase();
 
   let passed = 0;
-  const total = 14;
+  const total = 18;
 
   const admin = await User.findOne({ email: 'admin@demo.jaago.app' });
   const citizen = await User.findOne({ email: 'citizen.rahul@demo.jaago.app' });
   const officer = await User.findOne({ email: 'officer.bellandur@demo.jaago.app' });
   const bellandurWard = await Ward.findOne({ code: 'W-150' });
   const bbmpRoads = await Agency.findOne({ shortName: 'BBMP-Roads' });
+
+  // Default fetch mock for test environment to validate Cloudinary URLs without network dependence
+  const nativeFetch = global.fetch;
+  const mockDefaultFetch = async (input: any, init: any) => {
+    const urlStr = input?.toString() || '';
+    if (init?.method === 'HEAD' && urlStr.includes('res.cloudinary.com/jaago-pilot/')) {
+      const headers = new Headers();
+      headers.set('content-length', (1024 * 1024).toString()); // 1MB mock
+      return new Response(null, { status: 200, headers });
+    }
+    return nativeFetch(input, init);
+  };
+  global.fetch = mockDefaultFetch as any;
 
   // ------------------------------------------------------------------
   // 1. CLOUDINARY SIGNED UPLOADS & ENVIRONMENT-GATED MOCKS
@@ -79,10 +96,16 @@ async function runAuditFixesVerification() {
   const testSignRes = await signUploadPOST(testSignReq);
   const testSignData = await testSignRes.json();
 
-  if (testSignRes.status === 200 && testSignData.signature && testSignData.folder === 'jaago_complaints') {
+  if (
+    testSignRes.status === 200 &&
+    testSignData.signature &&
+    testSignData.folder === 'jaago_complaints' &&
+    testSignData.allowed_formats === 'jpg,jpeg,png,webp'
+  ) {
     console.log(`[PASS] Test 1: Real POST /api/uploads/sign verified:`);
     console.log(`       - In dev/prod with missing keys: returned HTTP 500 error.`);
     console.log(`       - In test mode: returned signature '${testSignData.signature.substring(0, 10)}...'`);
+    console.log(`       - Signed allowed_formats parameter: '${testSignData.allowed_formats}' in alphabetical order.`);
     passed++;
   } else {
     throw new Error('Test 1 failed: upload signing route response invalid');
@@ -129,15 +152,98 @@ async function runAuditFixesVerification() {
   passed++;
 
   // ------------------------------------------------------------------
-  // 3. SERVER-SIDE 5MB ASSET SIZE ENFORCEMENT
+  // 3. SERVER-SIDE 5MB ASSET SIZE & HEAD PATH MOCK VERIFICATION
   // ------------------------------------------------------------------
-  console.log('\n--- Test 3: Server-Side 5MB Asset Size Check ---');
-  const sizeOk = await verifyCloudinaryAssetSize(validCloudinaryUrl);
+  console.log('\n--- Test 3: Server-Side 5MB Asset Size & Mock HEAD Path ---');
+  const originalFetch = global.fetch;
+  let lastFetchedUrl = '';
+
+  // 3a. HEAD fails with HTTP 404 (non-2xx response) -> Must return false
+  global.fetch = (async (input: any, init: any) => {
+    lastFetchedUrl = input.toString();
+    if (init?.method === 'HEAD') {
+      return new Response(null, { status: 404, statusText: 'Not Found' });
+    }
+    return originalFetch(input, init);
+  }) as any;
+
+  const failResult = await verifyCloudinaryAssetSize(validCloudinaryUrl);
+  if (failResult !== false) {
+    global.fetch = mockDefaultFetch as any;
+    throw new Error('Expected verifyCloudinaryAssetSize to return false when HEAD request returns HTTP 404');
+  }
+
+  // 3b. Missing Content-Length header -> Must return false
+  global.fetch = (async (input: any, init: any) => {
+    lastFetchedUrl = input.toString();
+    if (init?.method === 'HEAD') {
+      return new Response(null, { status: 200, headers: new Headers() });
+    }
+    return nativeFetch(input, init);
+  }) as any;
+
+  const missingLengthResult = await verifyCloudinaryAssetSize(validCloudinaryUrl);
+  if (missingLengthResult !== false) {
+    global.fetch = mockDefaultFetch as any;
+    throw new Error('Expected verifyCloudinaryAssetSize to return false when Content-Length header is missing');
+  }
+
+  // 3c. Content-Length exceeds 5MB limit (e.g. 6MB) -> Must return false
+  global.fetch = (async (input: any, init: any) => {
+    lastFetchedUrl = input.toString();
+    if (init?.method === 'HEAD') {
+      const headers = new Headers();
+      headers.set('content-length', (6 * 1024 * 1024).toString());
+      return new Response(null, { status: 200, headers });
+    }
+    return nativeFetch(input, init);
+  }) as any;
+
+  const oversizedHeadResult = await verifyCloudinaryAssetSize(validCloudinaryUrl);
+  if (oversizedHeadResult !== false) {
+    global.fetch = mockDefaultFetch as any;
+    throw new Error('Expected verifyCloudinaryAssetSize to return false when Content-Length > 5MB');
+  }
+
+  // 3d. Transformed URL: verify that HEAD path strips transformations to target original asset
+  global.fetch = (async (input: any, init: any) => {
+    lastFetchedUrl = input.toString();
+    if (init?.method === 'HEAD') {
+      const headers = new Headers();
+      headers.set('content-length', (2 * 1024 * 1024).toString()); // 2MB ok
+      return new Response(null, { status: 200, headers });
+    }
+    return nativeFetch(input, init);
+  }) as any;
+
+  const transformedCloudinaryUrl =
+    'https://res.cloudinary.com/jaago-pilot/image/upload/w_800,c_fill,q_auto/v1700000000/jaago_complaints/sample.jpg';
+  const sizeOk = await verifyCloudinaryAssetSize(transformedCloudinaryUrl);
+  const expectedAuthoritativeUrl =
+    'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/sample.jpg';
+
+  if (!sizeOk || lastFetchedUrl !== expectedAuthoritativeUrl) {
+    global.fetch = mockDefaultFetch as any;
+    throw new Error(
+      `HEAD size check did not target stripped original asset. Expected: ${expectedAuthoritativeUrl}, Got: ${lastFetchedUrl}`
+    );
+  }
+
+  // Restore fetch to default test mock
+  global.fetch = mockDefaultFetch as any;
+
+  // 3e. Base64 payload size enforcement
   const oversizedBase64 = 'data:image/jpeg;base64,' + Buffer.alloc(6 * 1024 * 1024, 'a').toString('base64');
   const sizeOversized = await verifyCloudinaryAssetSize(oversizedBase64);
 
   if (sizeOk && !sizeOversized) {
-    console.log(`[PASS] Test 3: Server-side 5MB limit verification confirmed (oversized 6MB payload rejected).`);
+    console.log(`[PASS] Test 3: Server-side asset size & HEAD path mocked verification confirmed:`);
+    console.log(`       - HEAD 404 failure: rejected.`);
+    console.log(`       - Missing Content-Length: rejected.`);
+    console.log(`       - Content-Length > 5MB: rejected.`);
+    console.log(`       - Transformed URL stripped to authoritative asset: "${expectedAuthoritativeUrl}".`);
+    console.log(`       - Valid 2MB original asset: accepted.`);
+    console.log(`       - Oversized 6MB base64 payload: rejected.`);
     passed++;
   } else {
     throw new Error('5MB server-side size verification failed');
@@ -156,6 +262,7 @@ async function runAuditFixesVerification() {
       'Content-Type': 'application/json',
       'x-test-user-id': officer!._id.toString(),
       'x-test-user-role': 'officer',
+      'x-test-assigned-ward': resolveTarget!.wardId!.toString(),
     },
     body: JSON.stringify({
       lat: resolveTarget!.location.coordinates[1],
@@ -180,6 +287,7 @@ async function runAuditFixesVerification() {
       'Content-Type': 'application/json',
       'x-test-user-id': officer!._id.toString(),
       'x-test-user-role': 'officer',
+      'x-test-assigned-ward': resolveTarget!.wardId!.toString(),
     },
     body: JSON.stringify({
       lat: resolveTarget!.location.coordinates[1],
@@ -625,27 +733,48 @@ async function runAuditFixesVerification() {
     verificationDeadline: new Date(Date.now() + 36 * 3600 * 1000), // 36 hours remaining (<= 48h)
   });
 
-  // Call cron daemon
-  const cronDaemonReq = new NextRequest('http://localhost:3000/api/cron/auto-close', {
+  // Call cron daemon (Run 1: should send 1 reminder and set reminderSentAt)
+  const cronDaemonReq1 = new NextRequest('http://localhost:3000/api/cron/auto-close', {
     method: 'POST',
     headers: { authorization: `Bearer ${cronSecret}` },
   });
-  const cronDaemonRes = await autoClosePOST(cronDaemonReq);
-  const cronDaemonData = await cronDaemonRes.json();
+  const cronDaemonRes1 = await autoClosePOST(cronDaemonReq1);
+  const cronDaemonData1 = await cronDaemonRes1.json();
 
-  // Verify reminder notification was generated in Notification collection
-  const reminderNotif = await Notification.findOne({
+  // Verify reminderSentAt timestamp recorded on complaint document
+  const reloadedReminderComplaint = await Complaint.findById(reminderComplaint._id);
+  if (!reloadedReminderComplaint?.reminderSentAt) {
+    throw new Error('Test 13 failed: Complaint.reminderSentAt was not recorded on first cron run');
+  }
+
+  // Call cron daemon immediately a 2nd time: should find 0 complaints needing reminder (idempotent)
+  const cronDaemonReq2 = new NextRequest('http://localhost:3000/api/cron/auto-close', {
+    method: 'POST',
+    headers: { authorization: `Bearer ${cronSecret}` },
+  });
+  const cronDaemonRes2 = await autoClosePOST(cronDaemonReq2);
+  const cronDaemonData2 = await cronDaemonRes2.json();
+
+  // Verify exactly 1 reminder notification was generated across both runs
+  const reminderNotifs = await Notification.find({
     complaintId: reminderComplaint._id,
     type: 'reminder',
   });
 
-  if (cronDaemonRes.status === 200 && reminderNotif) {
-    console.log(`[PASS] Test 13: Notifications subsystem verified:`);
-    console.log(`       - Cron job detected ticket with <= 48h left and dispatched 72h reminder.`);
-    console.log(`       - Notification record created: "${reminderNotif.title}".`);
+  if (
+    cronDaemonRes1.status === 200 &&
+    cronDaemonRes2.status === 200 &&
+    cronDaemonData1.reminderSentCount >= 1 &&
+    cronDaemonData2.reminderSentCount === 0 &&
+    reminderNotifs.length === 1
+  ) {
+    console.log(`[PASS] Test 13: Notifications & 72h reminder idempotence verified:`);
+    console.log(`       - Run 1 dispatched reminder and set reminderSentAt: ${reloadedReminderComplaint.reminderSentAt.toISOString()}`);
+    console.log(`       - Run 2 dispatched 0 reminders (idempotent duplicate prevention).`);
+    console.log(`       - Exactly 1 reminder notification persisted in database.`);
     passed++;
   } else {
-    throw new Error('Test 13 72h reminder verification failed');
+    throw new Error('Test 13 72h reminder idempotence verification failed');
   }
 
   // ------------------------------------------------------------------
@@ -663,6 +792,407 @@ async function runAuditFixesVerification() {
   } else {
     throw new Error('Test 14 failed: Test gate missing in lib/apiAuth.ts');
   }
+
+  // ------------------------------------------------------------------
+  // 15. NEGATIVE TESTS: ALL /api/admin/* (401/403) & OFFICER WARD ISOLATION (403)
+  // ------------------------------------------------------------------
+  console.log('\n--- Test 15: Negative Tests: Admin Routes (401/403) & Officer Ward Isolation ---');
+  const testSampleComplaint = await Complaint.findOne({ wardId: bellandurWard!._id });
+  const testSampleOfficer = await OfficerAllowList.findOne();
+
+  // Define all 9 admin operations to test
+  const adminEndpoints: Array<{ name: string; invoke: (headers: Record<string, string>) => Promise<Response> }> = [
+    {
+      name: 'GET /api/admin/officers',
+      invoke: (h) => adminOfficersGET(new NextRequest('http://localhost:3000/api/admin/officers', { headers: h })),
+    },
+    {
+      name: 'POST /api/admin/officers',
+      invoke: (h) =>
+        adminOfficersPOST(
+          new NextRequest('http://localhost:3000/api/admin/officers', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...h },
+            body: JSON.stringify({
+              name: 'Unauthorized Test',
+              email: 'unauth@demo.jaago.app',
+              agencyId: bbmpRoads!._id.toString(),
+              assignedWardId: bellandurWard!._id.toString(),
+            }),
+          })
+        ),
+    },
+    {
+      name: 'PATCH /api/admin/officers/[id]',
+      invoke: (h) =>
+        adminOfficerUpdatePATCH(
+          new NextRequest(`http://localhost:3000/api/admin/officers/${testSampleOfficer!._id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json', ...h },
+            body: JSON.stringify({ isActive: false }),
+          }),
+          { params: { id: testSampleOfficer!._id.toString() } }
+        ),
+    },
+    {
+      name: 'GET /api/admin/triage',
+      invoke: (h) => adminTriageGET(new NextRequest('http://localhost:3000/api/admin/triage', { headers: h })),
+    },
+    {
+      name: 'PATCH /api/admin/complaints/[id]/assign',
+      invoke: (h) =>
+        adminAssignPATCH(
+          new NextRequest(`http://localhost:3000/api/admin/complaints/${testSampleComplaint!._id}/assign`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json', ...h },
+            body: JSON.stringify({ wardId: bellandurWard!._id.toString(), agencyId: bbmpRoads!._id.toString() }),
+          }),
+          { params: { id: testSampleComplaint!._id.toString() } }
+        ),
+    },
+    {
+      name: 'GET /api/admin/disputes',
+      invoke: (h) => adminDisputesGET(new NextRequest('http://localhost:3000/api/admin/disputes', { headers: h })),
+    },
+    {
+      name: 'PATCH /api/admin/complaints/[id]/arbitrate',
+      invoke: (h) =>
+        adminArbitratePATCH(
+          new NextRequest(`http://localhost:3000/api/admin/complaints/${testSampleComplaint!._id}/arbitrate`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json', ...h },
+            body: JSON.stringify({ action: 'resolve', remarks: 'Arbitration remarks by admin' }),
+          }),
+          { params: { id: testSampleComplaint!._id.toString() } }
+        ),
+    },
+    {
+      name: 'PATCH /api/admin/complaints/[id]/reject',
+      invoke: (h) =>
+        adminRejectPATCH(
+          new NextRequest(`http://localhost:3000/api/admin/complaints/${testSampleComplaint!._id}/reject`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json', ...h },
+            body: JSON.stringify({ reason: 'Invalid non-civic complaint' }),
+          }),
+          { params: { id: testSampleComplaint!._id.toString() } }
+        ),
+    },
+    {
+      name: 'GET /api/admin/metadata',
+      invoke: (h) => adminMetadataGET(new NextRequest('http://localhost:3000/api/admin/metadata', { headers: h })),
+    },
+  ];
+
+  // Run 401 and 403 checks across all admin endpoints
+  for (const endpoint of adminEndpoints) {
+    // 1. Anonymous (no auth header) -> HTTP 401
+    const anonRes = await endpoint.invoke({});
+    if (anonRes.status !== 401) {
+      throw new Error(`Expected HTTP 401 for anonymous caller on ${endpoint.name}, got ${anonRes.status}`);
+    }
+
+    // 2. Citizen role -> HTTP 403
+    const citizenRes = await endpoint.invoke({
+      'x-test-user-id': citizen!._id.toString(),
+      'x-test-user-role': 'citizen',
+    });
+    if (citizenRes.status !== 403) {
+      throw new Error(`Expected HTTP 403 for citizen caller on ${endpoint.name}, got ${citizenRes.status}`);
+    }
+
+    // 3. Officer role -> HTTP 403
+    const officerRes = await endpoint.invoke({
+      'x-test-user-id': officer!._id.toString(),
+      'x-test-user-role': 'officer',
+    });
+    if (officerRes.status !== 403) {
+      throw new Error(`Expected HTTP 403 for officer caller on ${endpoint.name}, got ${officerRes.status}`);
+    }
+  }
+
+  // Officer Ward Jurisdiction Check:
+  // Officer assigned to Bellandur attempts to resolve or update a complaint in HSR Layout
+  const hsrWard = await Ward.findOne({ code: 'W-174' });
+  const hsrComplaint = await Complaint.create({
+    title: 'HSR Layout Broken Pavement',
+    description: 'Complaint in HSR Layout for ward isolation testing.',
+    category: 'Roads',
+    location: { type: 'Point', coordinates: [77.6385, 12.912] },
+    address: 'HSR Layout Sector 2',
+    wardId: hsrWard!._id,
+    agencyId: bbmpRoads!._id,
+    imageUrl: 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/hsr.jpg',
+    status: 'In Progress',
+    reportedBy: citizen!._id,
+    upvotesCount: 1,
+  });
+
+  // Attempt resolve by Bellandur officer on HSR ticket -> 403
+  const foreignResolveReq = new NextRequest(
+    `http://localhost:3000/api/complaints/${hsrComplaint._id}/resolve`,
+    {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-test-user-id': officer!._id.toString(),
+        'x-test-user-role': 'officer',
+        'x-test-assigned-ward': bellandurWard!._id.toString(), // Bellandur ward != HSR ward
+      },
+      body: JSON.stringify({
+        lat: 12.912,
+        lng: 77.6385,
+        accuracy: 15,
+        resolutionImageUrl: 'data:image/jpeg;base64,' + Buffer.from('hsr-proof').toString('base64'),
+        remarks: 'Resolving from wrong ward officer',
+      }),
+    }
+  );
+  const foreignResolveRes = await resolvePATCH(foreignResolveReq, { params: { id: hsrComplaint._id.toString() } });
+  if (foreignResolveRes.status !== 403) {
+    throw new Error(`Expected HTTP 403 when officer resolves complaint outside ward, got ${foreignResolveRes.status}`);
+  }
+
+  // Attempt status change by Bellandur officer on HSR ticket -> 403
+  const foreignStatusReq = new NextRequest(
+    `http://localhost:3000/api/complaints/${hsrComplaint._id}/status`,
+    {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-test-user-id': officer!._id.toString(),
+        'x-test-user-role': 'officer',
+        'x-test-assigned-ward': bellandurWard!._id.toString(),
+      },
+      body: JSON.stringify({
+        status: 'In Progress',
+        remarks: 'Unauthorized status transition',
+      }),
+    }
+  );
+  const foreignStatusRes = await statusPATCH(foreignStatusReq, { params: { id: hsrComplaint._id.toString() } });
+  if (foreignStatusRes.status !== 403) {
+    throw new Error(`Expected HTTP 403 when officer updates status of complaint outside ward, got ${foreignStatusRes.status}`);
+  }
+
+  console.log(`[PASS] Test 15: Negative authorization & officer ward isolation verified:`);
+  console.log(`       - All 9 /api/admin/* routes return 401 for anonymous callers.`);
+  console.log(`       - All 9 /api/admin/* routes return 403 for citizen and officer callers.`);
+  console.log(`       - Officer outside ward attempting resolve returns HTTP 403.`);
+  console.log(`       - Officer outside ward attempting status change returns HTTP 403.`);
+  passed++;
+
+  // ------------------------------------------------------------------
+  // 16. UNROUTED COMPLAINTS ISOLATION
+  // ------------------------------------------------------------------
+  console.log('\n--- Test 16: Unrouted Complaints Isolation (Admin Triage Only) ---');
+  const isolatedUnroutedComplaint = await Complaint.create({
+    title: 'Boundary Boundary Edge Case Issue',
+    description: 'Outside designated Greater Bengaluru pilot polygons.',
+    category: 'Roads',
+    location: { type: 'Point', coordinates: [77.5, 12.8] },
+    address: 'Bengaluru Peripheral Ring Road',
+    imageUrl: 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/unrouted.jpg',
+    status: 'Pending',
+    reportedBy: citizen!._id,
+    upvotesCount: 1,
+    // wardId is omitted / undefined
+  });
+
+  // Query GET /api/complaints (public/explore/officer default list)
+  const listReq = new NextRequest('http://localhost:3000/api/complaints?limit=100');
+  const listRes = await complaintsGET(listReq);
+  const listData = await listRes.json();
+  const foundInPublicList = (listData.complaints || []).some(
+    (c: any) => c._id.toString() === isolatedUnroutedComplaint._id.toString()
+  );
+  if (foundInPublicList) {
+    throw new Error('Unrouted complaint without wardId was leaked in public GET /api/complaints list!');
+  }
+
+  // Query GET /api/admin/triage (admin triage queue)
+  const triageQueueReq = new NextRequest('http://localhost:3000/api/admin/triage', {
+    headers: {
+      'x-test-user-id': admin!._id.toString(),
+      'x-test-user-role': 'admin',
+    },
+  });
+  const triageQueueRes = await adminTriageGET(triageQueueReq);
+  const triageQueueData = await triageQueueRes.json();
+  const foundInTriage = (triageQueueData.complaints || []).some(
+    (c: any) => c._id.toString() === isolatedUnroutedComplaint._id.toString()
+  );
+  if (!foundInTriage) {
+    throw new Error('Unrouted complaint without wardId was not found in admin triage queue!');
+  }
+
+  // Verify getLeaderboardData does not include unrouted complaints
+  const leaderboardStats = await getLeaderboardData();
+  const totalWardsComplaints = leaderboardStats.reduce((sum, w) => sum + w.totalComplaints, 0);
+  const dbWardsComplaints = await Complaint.countDocuments({ wardId: { $ne: null, $exists: true } });
+  if (totalWardsComplaints !== dbWardsComplaints) {
+    throw new Error(
+      `Leaderboard counted unrouted complaints! Total in leaderboard: ${totalWardsComplaints}, expected with ward: ${dbWardsComplaints}`
+    );
+  }
+
+  console.log(`[PASS] Test 16: Unrouted complaints isolation verified:`);
+  console.log(`       - Excluded from public GET /api/complaints.`);
+  console.log(`       - Present exclusively in GET /api/admin/triage.`);
+  console.log(`       - Excluded from Civic Trust Index leaderboard calculations.`);
+  passed++;
+
+  // ------------------------------------------------------------------
+  // 17. CIVIC TRUST INDEX (CTI): CLOSED DENOMINATORS & SAMPLE THRESHOLD
+  // ------------------------------------------------------------------
+  console.log('\n--- Test 17: Civic Trust Index (CTI) Refinements & Small-Sample/Zero Edge Cases ---');
+
+  // 17a. Zero-ticket ward
+  const zeroWardStats = calculateSingleWardStats(
+    { _id: 'ward-zero-id', name: 'Zero Ticket Ward', code: 'W-000', corporation: 'BBMP' },
+    []
+  );
+  if (
+    zeroWardStats.hasEnoughData !== false ||
+    zeroWardStats.ctiScore !== null ||
+    zeroWardStats.rank !== null ||
+    zeroWardStats.closedCount !== 0 ||
+    Number.isNaN(zeroWardStats.ctiScore)
+  ) {
+    throw new Error('Zero-ticket ward CTI assertion failed: must have hasEnoughData: false, ctiScore: null');
+  }
+
+  // 17b. Small-sample ward (< 10 closed complaints, e.g. 5 closed: 4 verified, 1 auto-closed)
+  const smallSampleComplaints = [
+    { status: 'Resolved - Citizen Verified', createdAt: new Date(), statusHistory: [{ timestamp: new Date() }] },
+    { status: 'Resolved - Citizen Verified', createdAt: new Date(), statusHistory: [{ timestamp: new Date() }] },
+    { status: 'Resolved - Citizen Verified', createdAt: new Date(), statusHistory: [{ timestamp: new Date() }] },
+    { status: 'Resolved - Citizen Verified', createdAt: new Date(), statusHistory: [{ timestamp: new Date() }] },
+    { status: 'Resolved - Auto Closed', createdAt: new Date(), statusHistory: [{ timestamp: new Date() }] },
+    { status: 'Pending', createdAt: new Date() }, // open ticket should not count in closed denominator
+  ];
+  const smallWardStats = calculateSingleWardStats(
+    { _id: 'ward-small-id', name: 'Small Sample Ward', code: 'W-111', corporation: 'BBMP' },
+    smallSampleComplaints
+  );
+  if (
+    smallWardStats.hasEnoughData !== false ||
+    smallWardStats.ctiScore !== null ||
+    smallWardStats.rank !== null ||
+    smallWardStats.closedCount !== 5 ||
+    smallWardStats.participationRate !== 80
+  ) {
+    throw new Error('Small-sample ward (< 10 closed) must have hasEnoughData: false and ctiScore: null');
+  }
+
+  // 17c. Large-sample ward (>= 10 closed complaints, e.g. 12 closed: 9 verified, 3 auto closed, 1 reopened)
+  const largeSampleComplaints: any[] = [];
+  // 9 Citizen Verified (1 with a reopen)
+  for (let i = 0; i < 9; i++) {
+    largeSampleComplaints.push({
+      status: 'Resolved - Citizen Verified',
+      reopenCount: i === 0 ? 1 : 0,
+      createdAt: new Date(Date.now() - 24 * 3600 * 1000),
+      statusHistory: [{ timestamp: new Date() }], // 24h duration <= 72h SLA
+    });
+  }
+  // 3 Auto Closed
+  for (let i = 0; i < 3; i++) {
+    largeSampleComplaints.push({
+      status: 'Resolved - Auto Closed',
+      reopenCount: 0,
+      createdAt: new Date(Date.now() - 48 * 3600 * 1000),
+      statusHistory: [{ timestamp: new Date() }], // 48h duration <= 72h SLA
+    });
+  }
+  const largeWardStats = calculateSingleWardStats(
+    { _id: 'ward-large-id', name: 'Large Sample Ward', code: 'W-222', corporation: 'BBMP' },
+    largeSampleComplaints
+  );
+  if (
+    largeWardStats.hasEnoughData !== true ||
+    typeof largeWardStats.ctiScore !== 'number' ||
+    largeWardStats.closedCount !== 12 ||
+    largeWardStats.citizenVerifiedCount !== 9 ||
+    largeWardStats.autoClosedCount !== 3 ||
+    largeWardStats.participationRate !== 75 ||
+    largeWardStats.citizenVerifiedRate !== 0.75 ||
+    largeWardStats.autoClosedRate !== 0.25 ||
+    largeWardStats.reopenRate !== 1 / 12 ||
+    largeWardStats.slaComplianceRate !== 1.0
+  ) {
+    throw new Error(`Large-sample ward calculation failed: ${JSON.stringify(largeWardStats)}`);
+  }
+
+  // 17d. Ranking order: wards with enough data are ranked 1, 2... unranked wards have rank: null
+  const rankedResults = rankWardStats([zeroWardStats, smallWardStats, largeWardStats]);
+  if (
+    rankedResults[0].wardId !== 'ward-large-id' ||
+    rankedResults[0].rank !== 1 ||
+    rankedResults[1].rank !== null ||
+    rankedResults[2].rank !== null
+  ) {
+    throw new Error('Ranking order failed: Only wards with >= 10 closed complaints should receive numeric ranks');
+  }
+
+  console.log(`[PASS] Test 17: Civic Trust Index (CTI) refinements verified:`);
+  console.log(`       - Zero-ticket ward: closedCount=0, hasEnoughData=false, ctiScore=null (no NaN).`);
+  console.log(`       - Small-sample ward: closedCount=5 (< 10), hasEnoughData=false, participationRate=80%.`);
+  console.log(`       - Large-sample ward: closedCount=12, hasEnoughData=true, ctiScore=${largeWardStats.ctiScore}, participationRate=75%.`);
+  console.log(`       - Verified citizen-verified (9) and auto-closed (3) counts displayed separately.`);
+  console.log(`       - Only wards meeting statistical threshold receive rank #1.`);
+  passed++;
+
+  // ------------------------------------------------------------------
+  // 18. FIRST ADMIN INTEGRITY & SIGN-UP PRIVILEGE ESCALATION PREVENTION
+  // ------------------------------------------------------------------
+  console.log('\n--- Test 18: First Admin Creation Integrity & Public Sign-Up Gate ---');
+  // 18a. Verify seeded admin account exists with role 'admin'
+  const seededAdmin = await User.findOne({ email: 'admin@demo.jaago.app' });
+  if (!seededAdmin || seededAdmin.role !== 'admin') {
+    throw new Error('Seeded admin user admin@demo.jaago.app is missing or not role admin');
+  }
+
+  // 18b. Verify public credentials sign-up CANNOT create an admin
+  const prevDemoAuth = process.env.DEMO_AUTH;
+  (process.env as any).DEMO_AUTH = 'true';
+  const providers = getAuthProviders();
+  const credentialsProvider = providers.find((p) => p.id === 'credentials');
+  if (!credentialsProvider) {
+    throw new Error('Credentials provider missing when DEMO_AUTH=true');
+  }
+
+  const authorizeFn = (credentialsProvider as any).options?.authorize || credentialsProvider.authorize;
+
+  const publicNewUser = await authorizeFn(
+    { email: 'public_citizen_attempt@gmail.com', password: 'password123' },
+    {} as any
+  );
+  const createdPublicUser = await User.findOne({ email: 'public_citizen_attempt@gmail.com' });
+
+  if (createdPublicUser?.role !== 'citizen' || publicNewUser?.role !== 'citizen') {
+    throw new Error(`Public sign-up incorrectly granted elevated role: ${createdPublicUser?.role}`);
+  }
+
+  // 18c. Test ADMIN_EMAIL environment variable configuration
+  (process.env as any).ADMIN_EMAIL = 'custom.env.admin@demo.jaago.app';
+  const envAdminAuth = await authorizeFn(
+    { email: 'custom.env.admin@demo.jaago.app', password: 'password123' },
+    {} as any
+  );
+  const createdEnvAdmin = await User.findOne({ email: 'custom.env.admin@demo.jaago.app' });
+  delete (process.env as any).ADMIN_EMAIL;
+  (process.env as any).DEMO_AUTH = prevDemoAuth;
+
+  if (createdEnvAdmin?.role !== 'admin' || envAdminAuth?.role !== 'admin') {
+    throw new Error('ADMIN_EMAIL environment variable failed to configure admin role');
+  }
+
+  console.log(`[PASS] Test 18: First admin integrity verified:`);
+  console.log(`       - Seeded admin 'admin@demo.jaago.app' confirmed with role 'admin'.`);
+  console.log(`       - Public sign-up strictly defaults to role 'citizen' (cannot elevate to admin).`);
+  console.log(`       - Configured ADMIN_EMAIL correctly grants admin role when specified.`);
+  passed++;
 
   console.log('\n================================================================');
   console.log(`   FULL INTEGRATION SUITE COMPLETE: ${passed} / ${total} TESTS PASSED`);

@@ -29,7 +29,12 @@ export async function GET(req: NextRequest) {
     const { wardId, category, status, limit } = validatedQuery;
 
     const query: any = {};
-    if (wardId) query.wardId = wardId;
+    if (wardId) {
+      query.wardId = wardId;
+    } else {
+      // Unassigned/unrouted complaints appear exclusively in the admin triage queue
+      query.wardId = { $ne: null, $exists: true };
+    }
     if (category) query.category = category;
     if (status) query.status = status;
 
