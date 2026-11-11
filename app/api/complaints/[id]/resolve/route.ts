@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/mongodb';
 import { Complaint } from '@/models/Complaint';
 import { requireRole, formatApiError } from '@/lib/apiAuth';
-import { resolveComplaintSchema, ObjectIdSchema } from '@/lib/validations';
+import { resolveComplaintSchema, ObjectIdSchema, verifyCloudinaryAssetSize } from '@/lib/validations';
+import { notifyResolution } from '@/lib/notifications';
 import {
   calculateHaversineDistance,
   calculateAllowedResolutionRadius,
@@ -26,6 +27,27 @@ export async function PATCH(
     const body = await req.json();
     const validatedData = resolveComplaintSchema.parse(body);
     const { lat, lng, accuracy, resolutionImageUrl, remarks } = validatedData;
+
+    // Strict GPS Accuracy Quality Gate: reject accuracy worse than 50m
+    if (accuracy > 50) {
+      return NextResponse.json(
+        {
+          error: `GPS accuracy is too degraded (±${Math.round(accuracy)}m). Field resolution requires accuracy within 50m to verify on-site presence. Please step into an open area with a clear view of the sky and retry.`,
+          reportedAccuracyMeters: accuracy,
+          thresholdMeters: 50,
+        },
+        { status: 400 }
+      );
+    }
+
+    // Verify asset size server-side (<= 5MB)
+    const isValidSize = await verifyCloudinaryAssetSize(resolutionImageUrl);
+    if (!isValidSize) {
+      return NextResponse.json(
+        { error: 'Resolution photo proof exceeds the strict 5MB limit. Please upload an image under 5MB.' },
+        { status: 400 }
+      );
+    }
 
     // 4. Cap reported GPS accuracy at 100m
     const cappedAccuracy = capGpsAccuracy(accuracy);
@@ -84,6 +106,13 @@ export async function PATCH(
     });
 
     await complaint.save();
+
+    // Send notification to citizen reporter
+    try {
+      await notifyResolution(complaint.reportedBy.toString(), complaint);
+    } catch (notifErr: any) {
+      console.warn('Failed to send resolution notification:', notifErr.message);
+    }
 
     return NextResponse.json({
       message: 'Resolution verified and accepted. Complaint transitioned to Pending Verification.',

@@ -229,7 +229,7 @@ export async function seedPilotDatabase() {
       address: 'Outer Ring Rd, Bellandur, Bengaluru, Karnataka 560103',
       wardId: bellandurWard._id,
       agencyId: bbmpRoads._id,
-      imageUrl: 'https://images.unsplash.com/photo-1515162816999-a0c47dc192f7?w=800&fit=crop',
+      imageUrl: 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/pothole.jpg',
       status: 'Pending' as const,
       reportedBy: rahul._id,
       upvotesCount: 3, // 3 matching votes: rahul, voter1, voter2
@@ -256,7 +256,7 @@ export async function seedPilotDatabase() {
       address: '27th Main Rd, Sector 1, HSR Layout, Bengaluru, Karnataka 560102',
       wardId: hsrWard._id,
       agencyId: bbmpSwm._id,
-      imageUrl: 'https://images.unsplash.com/photo-1611288875685-147054941d42?w=800&fit=crop',
+      imageUrl: 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/garbage.jpg',
       status: 'In Progress' as const,
       reportedBy: priya._id,
       upvotesCount: 4, // 4 matching votes: priya, voter1, voter2, voter3
@@ -290,8 +290,8 @@ export async function seedPilotDatabase() {
       address: '80 Feet Rd, 4th Block, Koramangala, Bengaluru, Karnataka 560034',
       wardId: koramangalaWard._id,
       agencyId: agencyMap.get('BWSSB')!._id,
-      imageUrl: 'https://images.unsplash.com/photo-1584467735871-8e85353a8413?w=800&fit=crop',
-      resolutionImageUrl: 'https://images.unsplash.com/photo-1590674899484-d5640e854abe?w=800&fit=crop',
+      imageUrl: 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/drain.jpg',
+      resolutionImageUrl: 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/drain_resolved.jpg',
       status: 'Pending Verification' as const,
       reportedBy: rahul._id,
       upvotesCount: 3, // 3 matching votes: rahul, voter2, voter3
@@ -319,7 +319,7 @@ export async function seedPilotDatabase() {
           role: 'officer' as const,
           timestamp: new Date(Date.now() - 36 * 3600 * 1000),
           remarks: 'New RCC reinforced slab placed and cemented. Photo uploaded.',
-          imageUrl: 'https://images.unsplash.com/photo-1590674899484-d5640e854abe?w=800&fit=crop',
+          imageUrl: 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/drain_resolved.jpg',
           locationAccuracy: 8,
           resolutionDistanceMeters: 12,
         },
@@ -336,8 +336,8 @@ export async function seedPilotDatabase() {
       address: 'Haralur Main Rd, Bellandur, Bengaluru, Karnataka 560103',
       wardId: bellandurWard._id,
       agencyId: agencyMap.get('BESCOM')!._id,
-      imageUrl: 'https://images.unsplash.com/photo-1509114397022-ed747cca3f65?w=800&fit=crop',
-      resolutionImageUrl: 'https://images.unsplash.com/photo-1517457373958-b7bdd4587205?w=800&fit=crop',
+      imageUrl: 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/light.jpg',
+      resolutionImageUrl: 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/light_resolved.jpg',
       status: 'Resolved - Citizen Verified' as const,
       reportedBy: priya._id,
       upvotesCount: 2, // 2 matching votes: priya, rahul

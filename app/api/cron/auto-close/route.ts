@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/mongodb';
 import { Complaint } from '@/models/Complaint';
 import { User } from '@/models/User';
+import { Notification } from '@/models/Notification';
 import { cronQuerySchema } from '@/lib/validations';
+import { notify72hReminder, notifyAutoClose } from '@/lib/notifications';
 
 export const dynamic = 'force-dynamic';
 
@@ -52,7 +54,29 @@ async function handleAutoClose(req: NextRequest) {
       });
     }
 
-    // 2. Query complaints in 'Pending Verification' whose 120-hour window has expired
+    // 2. Query complaints in 'Pending Verification' that need 72-hour reminders
+    // (72 hours elapsed out of 120h window, meaning <= 48 hours remaining until auto-close)
+    const fortyEightHoursFromNow = new Date(now.getTime() + 48 * 60 * 60 * 1000);
+    const complaintsNeedingReminder = await Complaint.find({
+      status: 'Pending Verification',
+      verificationDeadline: { $lte: fortyEightHoursFromNow, $gt: now },
+    });
+
+    let reminderCount = 0;
+    for (const complaint of complaintsNeedingReminder) {
+      // Check if reminder was already dispatched to prevent spam
+      const existingReminder = await Notification.findOne({
+        complaintId: complaint._id,
+        type: 'reminder',
+      });
+
+      if (!existingReminder) {
+        await notify72hReminder(complaint.reportedBy.toString(), complaint);
+        reminderCount++;
+      }
+    }
+
+    // 3. Query complaints in 'Pending Verification' whose 120-hour window has expired
     const expiredComplaints = await Complaint.find({
       status: 'Pending Verification',
       verificationDeadline: { $lte: now },
@@ -72,15 +96,17 @@ async function handleAutoClose(req: NextRequest) {
       });
 
       await complaint.save();
+      await notifyAutoClose(complaint.reportedBy.toString(), complaint);
       updatedIds.push(complaint._id.toString());
     }
 
     return NextResponse.json({
       success: true,
       timestamp: now.toISOString(),
+      reminderSentCount: reminderCount,
       closedCount: updatedIds.length,
       autoClosedComplaintIds: updatedIds,
-      message: `Processed 120h auto-close audit: ${updatedIds.length} complaint(s) transitioned to Resolved - Auto Closed.`,
+      message: `Processed auto-close daemon: sent ${reminderCount} 72h reminder(s) and closed ${updatedIds.length} expired ticket(s).`,
     });
   } catch (error: any) {
     console.error('Error during auto-close cron:', error);

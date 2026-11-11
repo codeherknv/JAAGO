@@ -7,7 +7,9 @@ import { Agency } from '@/models/Agency';
 import { Vote } from '@/models/Vote';
 import { calculatePriorityScore, calculateHaversineDistance } from '@/lib/geo';
 import { requireAuth, formatApiError } from '@/lib/apiAuth';
-import { createComplaintSchema, listComplaintsQuerySchema } from '@/lib/validations';
+import { createComplaintSchema, listComplaintsQuerySchema, verifyCloudinaryAssetSize } from '@/lib/validations';
+import { notifyAssignment } from '@/lib/notifications';
+import { User } from '@/models/User';
 
 export const dynamic = 'force-dynamic';
 
@@ -59,6 +61,14 @@ export async function POST(req: NextRequest) {
 
     const { title, description, category, lat, lng, address, imageUrl, confirmDistinct } =
       validatedData;
+
+    const isValidSize = await verifyCloudinaryAssetSize(imageUrl);
+    if (!isValidSize) {
+      return NextResponse.json(
+        { error: 'Complaint image exceeds the strict 5MB limit. Please upload an image under 5MB.' },
+        { status: 400 }
+      );
+    }
 
     await connectToDatabase();
 
@@ -254,6 +264,19 @@ export async function POST(req: NextRequest) {
       .populate('wardId', 'name code corporation')
       .populate('agencyId', 'name shortName')
       .populate('reportedBy', 'name email');
+
+    // Notify assigned officer if an officer exists for this ward
+    try {
+      const assignedOfficer = await User.findOne({
+        role: 'officer',
+        assignedWardId: matchedWard._id,
+      }).select('_id');
+      if (assignedOfficer) {
+        await notifyAssignment(assignedOfficer._id.toString(), populatedComplaint);
+      }
+    } catch (notifErr: any) {
+      console.warn('Failed to send assignment notification:', notifErr.message);
+    }
 
     return NextResponse.json(
       {

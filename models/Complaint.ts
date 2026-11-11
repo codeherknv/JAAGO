@@ -38,7 +38,7 @@ export interface IComplaint extends Document {
     coordinates: [number, number]; // [longitude, latitude]
   };
   address: string;
-  wardId: Types.ObjectId;
+  wardId?: Types.ObjectId;
   agencyId?: Types.ObjectId;
   imageUrl: string;
   resolutionImageUrl?: string;
@@ -107,7 +107,7 @@ const ComplaintSchema = new Schema<IComplaint>(
       },
     },
     address: { type: String, required: true },
-    wardId: { type: Schema.Types.ObjectId, ref: 'Ward', required: true, index: true },
+    wardId: { type: Schema.Types.ObjectId, ref: 'Ward', index: true },
     agencyId: { type: Schema.Types.ObjectId, ref: 'Agency', index: true },
     imageUrl: { type: String, required: true },
     resolutionImageUrl: { type: String },

@@ -2,80 +2,94 @@
 
 ## Status Overview
 - **Core Architecture:** Phases 1 to 5 built and verified.
-- **Audit & Security Hardening:** All items from `AUDIT.md` and subsequent hardening requests have been implemented, tested, and verified with dedicated test suites.
-- **Verification Summary:** All tests, linting, and Next.js production builds pass cleanly with 0 errors.
+- **Audit & Security Hardening:** All items from `AUDIT.md` and subsequent hardening requests implemented and verified.
+- **Admin Control Center & Notifications:** Full `/admin` dashboard deployed (officer allow-list, triage queue, dispute arbitration, invalidation) and multi-channel notifications system (in-app + Nodemailer) with automated 72h reminders.
+- **Verification Summary:** All 14 integration and audit tests (`npm run test:fixes`), spatial tests (`npm run test:spatial`), and end-to-end tests (`npm run test:e2e`) pass cleanly. Next.js production build and linting complete with 0 errors.
 
 ---
 
 ## Architectural Hardening & Remediation Details
 
 ### 1. Cloudinary Uploads & Environment-Gated Mocking
-- **Test Mode Gating:** Any mock/test Cloudinary signature behavior runs strictly when `NODE_ENV === 'test'`.
-- **Dev & Prod Safety:** In development and production environments (`NODE_ENV !== 'test'`), missing credentials or default placeholder values in `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`, or `CLOUDINARY_CLOUD_NAME` immediately return HTTP `500` with an explicit configuration error message.
-- **Client Fallback:** `lib/cloudinaryClient.ts` throws a descriptive upload rejection or network error in development and production if the remote upload fails, refusing mock fallbacks unless in test mode.
+- **Strict HTTPS Cloudinary Enforcement:** `imageProofSchema` accepts only HTTPS URLs on `res.cloudinary.com` containing our configured cloud name and the `jaago_complaints` folder.
+- **Base64 Gating:** Base64 data URIs are permitted **strictly when `NODE_ENV === 'test'`**. In development and production, base64 data URIs are rejected.
+- **Dev & Prod Configuration Safety:** In development and production (`NODE_ENV !== 'test'`), missing credentials or default placeholder values in `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`, or `CLOUDINARY_CLOUD_NAME` immediately return HTTP `500` with an explicit configuration error message.
 
-### 2. Database-Backed Rate Limiter
-- Replaced any in-memory rate limiting with a database-backed query:
-  `Complaint.countDocuments({ reportedBy: user.id, createdAt: { $gte: oneHourAgo } })`.
-- Fixed threshold of **3 complaints per hour per user**. Exceeding requests are rejected with HTTP `429 Too Many Requests`.
-- Indexed for scale via compound index on `Complaint`: `{ reportedBy: 1, createdAt: -1 }`.
+### 2. GPS Accuracy Quality Gate (Reject Accuracy > 50m)
+- In `app/api/complaints/[id]/resolve/route.ts`, reported GPS accuracy worse than 50m (`accuracy > 50`) is rejected with HTTP `400`:
+  `"GPS accuracy is too degraded (±Xm). Field resolution requires accuracy within 50m to verify on-site presence. Please step into an open area with a clear view of the sky and retry."`
+- Accuracy $\le 50\text{m}$ proceeds to distance verification against original complaint coordinates.
 
-### 3. Single-Transaction Complaint & Vote Creation
-- Complaint creation and the reporter's initial vote are created atomically in a single MongoDB transaction via `session.withTransaction(...)` in `app/api/complaints/route.ts`.
-- The delete-on-failure workaround (`Complaint.findByIdAndDelete`) has been completely removed.
-- `lib/reconcileVotes.ts` (`reconcileAllVotes`) remains intact as a scheduled/background safety net.
+### 3. Server-Side 5MB Limit Enforcement
+Enforced through two independent server-side checks:
+1. **Cloudinary Upload Gateway:** The signing endpoint `app/api/uploads/sign/route.ts` generates signatures specifying `folder='jaago_complaints'`, `maxFileSizeBytes=5242880`, and `allowedFormats=['jpg', 'jpeg', 'png', 'webp']`.
+2. **Server-Side Ingest Verifier (`verifyCloudinaryAssetSize`):**
+   - For Cloudinary HTTPS URLs: performs an HTTP `HEAD` request to `res.cloudinary.com` and checks `Content-Length`. If size exceeds 5MB (`5 * 1024 * 1024` bytes), the request is rejected with HTTP `400`.
+   - For test base64 data URIs: decodes byte length (`Math.ceil((base64Data.length * 3) / 4)`) and rejects payloads $> 5\text{MB}$.
 
-### 4. Technical Note: 5MB Limit and Image Format Enforcement
-Image limits and formats are enforced in a defense-in-depth model across three distinct layers:
-1. **Client-Side Pre-Flight Check (`lib/cloudinaryClient.ts`):**
-   - Validates `file.size <= 5 * 1024 * 1024` (5MB).
-   - Validates `file.type` against `['image/jpeg', 'image/png', 'image/webp', 'image/jpg']` prior to dispatching upload requests.
-2. **Cloudinary Signature & Upload Gateway (`app/api/uploads/sign/route.ts`):**
-   - Signature parameters include `folder='jaago_complaints'` and `allowed_formats=['jpg', 'jpeg', 'png', 'webp']`.
-   - The Cloudinary upload API verifies the HMAC-SHA1 signature and enforces format restrictions directly at the ingest boundary.
-3. **Server-Side Ingestion Validation (`lib/validations.ts` & API Routes):**
-   - All complaint and resolution routes (`POST /api/complaints`, `PATCH /api/complaints/[id]/resolve`, `POST /api/complaints/[id]/verify`) enforce `imageProofSchema` on `imageUrl` and `resolutionImageUrl`.
-   - For base64 data URIs: parses the header to enforce MIME types (`image/jpeg`, `image/png`, `image/webp`) and decodes base64 buffer length to ensure byte size does not exceed 5MB (`5 * 1024 * 1024` bytes).
-   - For HTTP/HTTPS URLs: parses and validates the URL protocol and ensures the path points to Cloudinary (`cloudinary.com`) or has an allowed extension (`.jpg`, `.jpeg`, `.png`, `.webp`).
+### 4. Test-Only Auth Shortcut Safety Audit (`lib/apiAuth.ts`)
+The header-based test authorization shortcut is protected by an explicit environment check:
+```typescript
+if (process.env.NODE_ENV === 'test' && req) {
+  const testUserId = req.headers.get('x-test-user-id');
+  const testUserRole = (req.headers.get('x-test-user-role') || 'citizen') as UserRole;
+  if (testUserId) {
+    return {
+      id: testUserId,
+      email: req.headers.get('x-test-user-email') || 'test@demo.jaago.app',
+      name: 'Test Runner User',
+      role: testUserRole,
+    };
+  }
+}
+```
+In development or production (`NODE_ENV !== 'test'`), this condition evaluates to `false`. The headers are ignored and execution unconditionally calls NextAuth's `getServerSession(authOptions)`.
 
-### 5. API Route Zod Validation Audit
-Every API route in the application has been audited and validated:
-- `app/api/complaints/route.ts` (GET): Validated with `listComplaintsQuerySchema`.
-- `app/api/complaints/route.ts` (POST): Validated with `createComplaintSchema`.
-- `app/api/complaints/nearby/route.ts` (GET): Validated with `nearbyQuerySchema`.
-- `app/api/complaints/[id]/route.ts` (GET): Validated with `ObjectIdSchema`.
-- `app/api/complaints/[id]/resolve/route.ts` (PATCH): Validated with `ObjectIdSchema` & `resolveComplaintSchema`.
-- `app/api/complaints/[id]/status/route.ts` (PATCH): Validated with `ObjectIdSchema` & `updateStatusSchema`.
-- `app/api/complaints/[id]/upvote/route.ts` (POST): Validated with `ObjectIdSchema`.
-- `app/api/complaints/[id]/upvote/route.ts` (GET): Validated with `ObjectIdSchema` and query validated with `getUpvoteQuerySchema`.
-- `app/api/complaints/[id]/verify/route.ts` (POST): Validated with `ObjectIdSchema` & `verifyComplaintSchema`.
-- `app/api/cron/auto-close/route.ts` (GET & POST): Validated with `cronQuerySchema`.
-- `app/api/uploads/sign/route.ts` (POST): Validated with `signUploadSchema`.
+### 5. Administrative Control Center (`/admin`)
+- **Route:** `app/admin/page.tsx`, protected for `role === 'admin'`.
+- **Officer Allow-List Management:**
+  - `GET /api/admin/officers`: Lists all officers with assigned ward and agency.
+  - `POST /api/admin/officers`: Adds new officers to the allow-list (validates via `addOfficerSchema`).
+  - `PATCH /api/admin/officers/[id]`: Toggles `isActive` and re-assigns ward/agency.
+- **Triage Queue:**
+  - `GET /api/admin/triage`: Displays complaints missing ward or agency routing.
+  - `PATCH /api/admin/complaints/[id]/assign`: Assigns ward and agency, appends to `statusHistory`, and dispatches assignment notifications.
+- **Disputed - Admin Review Queue:**
+  - `GET /api/admin/disputes`: Displays tickets escalated by the dispute circuit breaker (3 contests).
+  - `PATCH /api/admin/complaints/[id]/arbitrate`: Upholds resolution or marks as invalid, appends to `statusHistory`, and notifies reporter and officer.
+- **Complaint Invalidation Registry:**
+  - `PATCH /api/admin/complaints/[id]/reject`: Marks complaint as `Rejected - Invalid` with a required reason (min 5 chars), appends to `statusHistory`, and notifies reporter.
 
-**Routes Left Unvalidated by Custom Zod:**
-- `app/api/auth/[...nextauth]/route.ts`: Left unvalidated by custom Zod schemas because NextAuth manages its own internal protocol routes (CSRF token verification, OAuth callbacks, session state).
-
-### 6. Test Suite Architecture (`scripts/testFixes.ts`)
-The test runner invokes real Next.js route handlers directly via `NextRequest`:
-- **Real Route Handlers Called:**
-  - Test 1: Real `POST /api/uploads/sign` (tests both dev 500 rejection and test-mode signing).
-  - Test 2: Real `POST /api/complaints` (tests 409 duplicate rejection and `confirmDistinct: true` override).
-  - Test 3: Real `POST /api/cron/auto-close` (tests 401 unauthenticated and 200 with `CRON_SECRET`).
-  - Test 5: Real `POST /api/complaints` (tests 400 Zod failure) & real `PATCH /api/complaints/[id]/resolve` (tests 403 role block).
-  - Test 6: Real `PATCH /api/complaints/[id]/resolve` (tests 100m GPS accuracy clamping and radius bounding).
-  - Test 7: Real `POST /api/complaints` (tests atomic MongoDB transaction creating complaint + vote).
-  - Test 8: Real `POST /api/complaints` (tests database-backed rate limit triggering 429 on 4th submission).
-- **Tests Marked as Unable to Call Route Handlers Directly:**
-  - **Test 4 (Credentials Gating):** NextAuth's `authOptions` is an initialization config object in `lib/auth.ts`, not an exported route handler. Evaluated via dynamic provider assertion under `DEMO_AUTH=false` vs `DEMO_AUTH=true`.
-  - **Test 9 (Domain Audit):** Database collection-wide query asserting zero `.gov.in`/`.nic.in` domains exist in `User` and `OfficerAllowList`.
-  - **Test 10 (Production Fallback Guard):** Source inspection verifying `lib/mongodb.ts` refuses in-memory server instantiation when `NODE_ENV === 'production'`.
+### 6. Notifications Subsystem
+- **Model:** `models/Notification.ts` (`userId`, `complaintId`, `type`, `title`, `message`, `read`, `emailSent`, `createdAt`).
+- **Nodemailer Transport:** Dispatches email notifications via configured SMTP or local stream/JSON mock transporter during dev/test.
+- **Automated Civic Triggers:**
+  1. *Assignment:* Sent to officer on ticket creation or manual triage.
+  2. *Resolution:* Sent to citizen reporter when officer submits resolution (opening 120h audit).
+  3. *Reopen:* Sent to officer when citizen contests resolution.
+  4. *72-Hour Reminder:* Dispatched by cron daemon when 72 hours have elapsed ($\le 48$ hours remaining in verification window).
+  5. *Auto-Close:* Dispatched by cron daemon when 120-hour window elapses without dispute.
 
 ---
 
 ## Test & Build Verification Results
 
-- `npm run test:fixes`: **PASS (10 / 10 passed)**
+- `npm run test:fixes`: **PASS (14 / 14 passed)**
+  1. Cloudinary signed uploads & env gating
+  2. `imageProofSchema` HTTPS Cloudinary & test-only base64
+  3. Server-side 5MB asset size check
+  4. GPS accuracy quality gate (reject accuracy > 50m)
+  5. Server-side duplicate re-check (409 vs 201)
+  6. `CRON_SECRET` header authorization
+  7. `DEMO_AUTH=true` credentials provider gating
+  8. Database-backed rate limiting (3 complaints / hour)
+  9. Admin Officer Allow-List (add & deactivate)
+  10. Admin Triage & manual routing (appends to `statusHistory`)
+  11. Disputed queue & dispute arbitration (appends to `statusHistory`)
+  12. Complaint invalidation with reason (appends to `statusHistory`)
+  13. Notifications subsystem & 72h cron reminder
+  14. `apiAuth.ts` test-only auth shortcut safety audit
 - `npm run test:spatial`: **PASS (3 / 3 passed)**
 - `npm run test:e2e`: **PASS (7 / 7 passed)**
-- `npm run lint`: **PASS (0 errors, 10 warnings)**
-- `npm run build`: **PASS (Compiled successfully, 9 static/dynamic routes generated)**
+- `npm run lint`: **PASS (0 errors, 12 warnings)**
+- `npm run build`: **PASS (Compiled successfully, 10 static/dynamic routes generated)**

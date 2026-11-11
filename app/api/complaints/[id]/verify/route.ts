@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/mongodb';
 import { Complaint } from '@/models/Complaint';
+import { User } from '@/models/User';
 import { requireAuth, formatApiError } from '@/lib/apiAuth';
 import { verifyComplaintSchema, ObjectIdSchema } from '@/lib/validations';
 import { calculatePriorityScore } from '@/lib/geo';
+import { notifyReopen } from '@/lib/notifications';
 
 export const dynamic = 'force-dynamic';
 
@@ -96,6 +98,19 @@ export async function POST(
       );
 
       await complaint.save();
+
+      // Send reopen notification to assigned officer or municipal team
+      try {
+        const assignedOfficer = await User.findOne({
+          role: 'officer',
+          assignedWardId: complaint.wardId,
+        }).select('_id');
+        if (assignedOfficer) {
+          await notifyReopen(assignedOfficer._id.toString(), complaint, complaint.reopenCount, remarks);
+        }
+      } catch (notifErr: any) {
+        console.warn('Failed to send reopen notification:', notifErr.message);
+      }
 
       return NextResponse.json({
         message:
