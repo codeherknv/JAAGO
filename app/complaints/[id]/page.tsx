@@ -1,29 +1,33 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { useSession } from 'next-auth/react';
+import Image from 'next/image';
 import {
+  ChevronLeft,
   MapPin,
-  Clock,
   ThumbsUp,
+  AlertCircle,
+  CheckCircle2,
+  Share2,
+  Loader2,
   ShieldCheck,
   AlertTriangle,
-  CheckCircle2,
-  XCircle,
-  Camera,
-  User,
-  ArrowLeft,
-  Loader2,
-  Calendar,
-  AlertOctagon,
-  Sparkles,
+  Clock,
+  ExternalLink,
 } from 'lucide-react';
+import { StatusBadge } from '@/components/ui/StatusBadge';
+import { Button } from '@/components/ui/Button';
+import { BeforeAfterSlider } from '@/components/ui/BeforeAfterSlider';
+import { Timeline } from '@/components/ui/Timeline';
+import { BottomSheet } from '@/components/ui/BottomSheet';
+import { Skeleton } from '@/components/ui/Skeleton';
+import { useTranslation } from '@/lib/i18n';
 
 export default function ComplaintDetailPage() {
   const params = useParams();
   const router = useRouter();
-  const { data: session } = useSession();
+  const { t } = useTranslation();
   const complaintId = params.id as string;
 
   const [complaint, setComplaint] = useState<any>(null);
@@ -34,40 +38,41 @@ export default function ComplaintDetailPage() {
   const [upvoting, setUpvoting] = useState(false);
   const [hasUpvoted, setHasUpvoted] = useState(false);
 
-  // Verification modal states
-  const [showContestModal, setShowContestModal] = useState(false);
+  // Verification audit states
+  const [showContestSheet, setShowContestSheet] = useState(false);
   const [contestRemarks, setContestRemarks] = useState('');
   const [contestImageUrl, setContestImageUrl] = useState('');
   const [verifying, setVerifying] = useState(false);
-  const [verifyMessage, setVerifyMessage] = useState<string | null>(null);
+  const [feedbackNotice, setFeedbackNotice] = useState<string | null>(null);
 
-  const fetchComplaint = async () => {
+  const fetchComplaint = useCallback(async () => {
     try {
       setLoading(true);
       const res = await fetch(`/api/complaints/${complaintId}`);
-      if (!res.ok) throw new Error('Complaint not found');
+      if (!res.ok) throw new Error('Complaint not found.');
       const data = await res.json();
       setComplaint(data.complaint);
 
-      // Check upvote status
+      // Check user upvote state
       const voteRes = await fetch(`/api/complaints/${complaintId}/upvote`);
       if (voteRes.ok) {
         const voteData = await voteRes.json();
         setHasUpvoted(voteData.hasUpvoted);
       }
     } catch (err: any) {
-      setError(err.message || 'Failed to load complaint');
+      setError(err.message || 'Failed to load complaint.');
     } finally {
       setLoading(false);
     }
-  };
+  }, [complaintId]);
 
   useEffect(() => {
     if (complaintId) {
       fetchComplaint();
     }
-  }, [complaintId]);
+  }, [complaintId, fetchComplaint]);
 
+  // Support / Upvote
   const handleUpvote = async () => {
     setUpvoting(true);
     try {
@@ -87,14 +92,16 @@ export default function ComplaintDetailPage() {
         setHasUpvoted(true);
       }
     } catch (err: any) {
-      alert(err.message || 'Failed to upvote');
+      alert(err.message || 'Failed to support report.');
     } finally {
       setUpvoting(false);
     }
   };
 
+  // Confirm Fix
   const handleConfirmResolution = async () => {
     setVerifying(true);
+    setFeedbackNotice(null);
     try {
       const res = await fetch(`/api/complaints/${complaintId}/verify`, {
         method: 'POST',
@@ -104,19 +111,20 @@ export default function ComplaintDetailPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
 
-      setVerifyMessage('Resolution confirmed! Ticket marked as Resolved - Citizen Verified.');
+      setFeedbackNotice('Resolution confirmed. Ticket is now Resolved - Citizen verified.');
       fetchComplaint();
     } catch (err: any) {
-      alert(err.message);
+      alert(err.message || 'Failed to verify.');
     } finally {
       setVerifying(false);
     }
   };
 
+  // Contest / Reopen Fix
   const handleContestResolution = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!contestRemarks) {
-      alert('Please explain why the resolution is incomplete or unsatisfactory.');
+    if (!contestRemarks.trim()) {
+      alert('Please explain what is still broken or incomplete.');
       return;
     }
 
@@ -127,19 +135,20 @@ export default function ComplaintDetailPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'contest',
-          remarks: contestRemarks,
-          imageUrl: contestImageUrl || undefined,
+          remarks: contestRemarks.trim(),
+          imageUrl: contestImageUrl.trim() || undefined,
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
 
-      setShowContestModal(false);
+      setShowContestSheet(false);
       setContestRemarks('');
-      setVerifyMessage(data.message);
+      setContestImageUrl('');
+      setFeedbackNotice(data.message);
       fetchComplaint();
     } catch (err: any) {
-      alert(err.message);
+      alert(err.message || 'Failed to contest.');
     } finally {
       setVerifying(false);
     }
@@ -147,393 +156,328 @@ export default function ComplaintDetailPage() {
 
   if (loading) {
     return (
-      <div className="min-h-[60vh] flex items-center justify-center">
-        <div className="flex flex-col items-center space-y-3">
-          <Loader2 className="w-8 h-8 animate-spin text-orange-600" />
-          <p className="text-sm font-semibold text-slate-600">Loading complaint details...</p>
-        </div>
+      <div className="max-w-2xl mx-auto px-4 py-8 space-y-4">
+        <Skeleton className="w-24 h-8" />
+        <Skeleton className="w-full h-12" />
+        <Skeleton variant="map" className="h-64" />
+        <Skeleton variant="row" />
+        <Skeleton variant="row" />
       </div>
     );
   }
 
   if (error || !complaint) {
     return (
-      <div className="max-w-2xl mx-auto px-4 py-16 text-center space-y-4">
-        <AlertTriangle className="w-12 h-12 text-red-500 mx-auto" />
-        <h2 className="text-2xl font-bold text-slate-900">Complaint Not Found</h2>
-        <p className="text-sm text-slate-600">{error || 'This record does not exist.'}</p>
-        <button
-          onClick={() => router.push('/explore')}
-          className="inline-flex items-center space-x-2 px-4 py-2 rounded-xl bg-slate-900 text-white text-sm font-semibold"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          <span>Back to Civic Map</span>
-        </button>
+      <div className="max-w-md mx-auto px-4 py-16 text-center space-y-4">
+        <div className="w-12 h-12 mx-auto rounded-control bg-alert-light border border-alert-red/30 flex items-center justify-center text-alert-red">
+          <AlertCircle className="w-6 h-6 stroke-[2]" />
+        </div>
+        <h2 className="text-lg font-heading font-bold text-asphalt">
+          Complaint not found
+        </h2>
+        <p className="text-xs text-asphalt-muted leading-relaxed">
+          {error || 'The requested civic issue record does not exist or has been removed.'}
+        </p>
+        <div>
+          <Button variant="secondary" onClick={() => router.push('/explore')}>
+            <ChevronLeft className="w-4 h-4 mr-1" />
+            <span>Return to map</span>
+          </Button>
+        </div>
       </div>
     );
   }
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'Pending':
-        return 'bg-red-100 text-red-800 border-red-300';
-      case 'In Progress':
-        return 'bg-amber-100 text-amber-800 border-amber-300';
-      case 'Pending Verification':
-        return 'bg-blue-100 text-blue-800 border-blue-300';
-      case 'Resolved - Citizen Verified':
-        return 'bg-emerald-100 text-emerald-800 border-emerald-300';
-      case 'Resolved - Auto Closed':
-        return 'bg-slate-100 text-slate-800 border-slate-300';
-      case 'Reopened - Escalated':
-        return 'bg-purple-100 text-purple-800 border-purple-300';
-      case 'Disputed - Admin Review':
-        return 'bg-rose-100 text-rose-800 border-rose-300 animate-pulse';
-      default:
-        return 'bg-slate-100 text-slate-800 border-slate-300';
-    }
-  };
+  // Calculate remaining audit days if in verification window
+  let remainingAuditDays = 5;
+  if (complaint.verificationDeadline) {
+    const diffMs = new Date(complaint.verificationDeadline).getTime() - Date.now();
+    remainingAuditDays = Math.max(0, Math.ceil(diffMs / (24 * 3600 * 1000)));
+  }
+
+  // Find latest officer resolution event for BeforeAfter dates
+  const officerResolveEvent = Array.isArray(complaint.statusHistory)
+    ? [...complaint.statusHistory].reverse().find(
+        (e: any) =>
+          e.status === 'Pending Verification' ||
+          (e.role === 'officer' && String(e.status).startsWith('Resolved'))
+      )
+    : null;
 
   return (
-    <div className="max-w-5xl mx-auto px-4 py-10 sm:px-6">
-      {/* Back button & top bar */}
-      <div className="flex items-center justify-between mb-6">
+    <div className="max-w-2xl mx-auto px-4 py-6 sm:py-8 space-y-6">
+      {/* 1. TOP BAR: Back Navigation + Ward/Agency Tag */}
+      <div className="flex items-center justify-between">
         <button
           onClick={() => router.back()}
-          className="flex items-center space-x-1.5 text-xs font-bold text-slate-600 hover:text-slate-900 bg-white border border-slate-200 px-3 py-1.5 rounded-lg shadow-sm"
+          className="inline-flex items-center gap-1 min-h-[38px] px-2.5 py-1 text-xs font-heading font-semibold text-asphalt bg-white hover:bg-kerb rounded-control border border-border transition-colors"
         >
-          <ArrowLeft className="w-4 h-4" />
-          <span>Back</span>
+          <ChevronLeft className="w-4 h-4 stroke-[2.5]" />
+          <span>{t.back}</span>
         </button>
 
-        <div className="flex items-center space-x-2">
-          <span className="text-xs font-semibold text-slate-500">Ward:</span>
-          <span className="text-xs font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-800 border border-slate-200">
-            {complaint.wardId?.name} ({complaint.wardId?.code})
-          </span>
+        <div className="flex items-center gap-2">
+          {complaint.wardId && (
+            <span className="px-2 py-0.5 rounded-plate bg-white text-asphalt font-heading font-bold text-xs border border-border">
+              {complaint.wardId.name} ({complaint.wardId.code})
+            </span>
+          )}
           {complaint.agencyId && (
-            <span className="text-xs font-bold px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
+            <span className="px-2 py-0.5 rounded-plate bg-signboard-light text-signboard-blue font-heading font-bold text-xs border border-signboard-blue/30">
               {complaint.agencyId.shortName}
             </span>
           )}
         </div>
       </div>
 
-      {verifyMessage && (
-        <div className="mb-6 p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-sm font-semibold flex items-center space-x-3">
-          <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-          <span>{verifyMessage}</span>
+      {/* Global Notice Banner */}
+      {feedbackNotice && (
+        <div className="p-3 bg-fixed-light border border-fixed-green/40 rounded-control flex items-center gap-2 text-xs text-fixed-green font-medium">
+          <CheckCircle2 className="w-4 h-4 shrink-0" />
+          <span>{feedbackNotice}</span>
         </div>
       )}
 
-      {/* Main Header Card */}
-      <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm space-y-6">
-        <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
-          <div className="space-y-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <span
-                className={`text-xs uppercase font-extrabold px-3 py-1 rounded-full border ${getStatusBadge(
-                  complaint.status
-                )}`}
-              >
-                {complaint.status}
-              </span>
-              <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700">
-                {complaint.category}
-              </span>
-              {complaint.reopenCount > 0 && (
-                <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-purple-100 text-purple-800 border border-purple-200">
-                  Dispute Count: {complaint.reopenCount}/2
-                </span>
-              )}
-            </div>
-
-            <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
-              {complaint.title}
-            </h1>
-
-            <p className="text-xs text-slate-500 flex items-center space-x-1">
-              <MapPin className="w-3.5 h-3.5 text-slate-400" />
-              <span>{complaint.address}</span>
-            </p>
+      {/* 2. HEADER PLATE: Status Badge, Title, Address */}
+      <div className="bg-white p-5 rounded-control border border-border space-y-3">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div className="flex items-center gap-2">
+            <StatusBadge status={complaint.status} />
+            <span className="text-xs font-heading font-semibold text-asphalt-muted px-2 py-0.5 bg-kerb rounded-plate border border-border-subtle">
+              {complaint.category}
+            </span>
           </div>
 
-          {/* Upvote Button */}
-          <div className="flex items-center space-x-3">
-            <button
-              onClick={handleUpvote}
-              disabled={upvoting || hasUpvoted}
-              className={`flex items-center space-x-2 px-5 py-3 rounded-2xl font-bold text-sm shadow-sm transition ${
-                hasUpvoted
-                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 cursor-default'
-                  : 'bg-orange-600 hover:bg-orange-700 text-white shadow-orange-600/20 hover:scale-[1.02]'
-              }`}
-            >
-              <ThumbsUp className={`w-4 h-4 ${hasUpvoted ? 'text-emerald-600' : 'text-white'}`} />
-              <span>{hasUpvoted ? 'Upvoted' : 'Upvote Issue'}</span>
-              <span className="bg-black/15 px-2 py-0.5 rounded-full text-xs font-black">
-                {complaint.upvotesCount}
-              </span>
-            </button>
-          </div>
+          {complaint.reopenCount > 0 && (
+            <span className="text-[11px] font-heading font-bold px-2 py-0.5 rounded-plate bg-alert-light text-alert-red border border-alert-red/30">
+              Disputes: {complaint.reopenCount} / 2
+            </span>
+          )}
         </div>
 
-        <p className="text-sm text-slate-700 leading-relaxed bg-slate-50 p-4 rounded-2xl border border-slate-100">
-          {complaint.description}
-        </p>
+        <h1 className="text-xl sm:text-2xl font-heading font-bold text-asphalt leading-tight">
+          {complaint.title}
+        </h1>
 
-        {/* 120-Hour Citizen Audit Alert & Actions */}
-        {complaint.status === 'Pending Verification' && (
-          <div className="p-6 rounded-2xl bg-blue-50/70 border border-blue-200 space-y-4">
-            <div className="flex items-start justify-between">
-              <div className="flex items-center space-x-2.5">
-                <ShieldCheck className="w-6 h-6 text-blue-600 shrink-0" />
-                <div>
-                  <h3 className="text-sm font-bold text-blue-900">
-                    5-Day Citizen Verification Audit Window
-                  </h3>
-                  <p className="text-xs text-blue-700 mt-0.5">
-                    Field officer marked this resolved with GPS lock. As a citizen, you have 120 hours to confirm the fix or contest it.
-                  </p>
-                </div>
-              </div>
-              <div className="text-right">
-                <span className="text-[11px] font-bold text-blue-800 uppercase tracking-wider block">
-                  Reopen Limit
-                </span>
-                <span className="text-xs font-black text-blue-900">
-                  {complaint.reopenCount} / 2 Used
-                </span>
-              </div>
+        <div className="flex items-center gap-1.5 text-xs text-asphalt-muted">
+          <MapPin className="w-3.5 h-3.5 text-signboard-blue shrink-0" />
+          <span className="truncate">{complaint.address}</span>
+        </div>
+
+        {complaint.description && (
+          <p className="text-xs text-asphalt leading-relaxed pt-2 border-t border-border-subtle">
+            {complaint.description}
+          </p>
+        )}
+      </div>
+
+      {/* 3. SIGNATURE ELEMENT: BEFORE & AFTER SLIDER (FIRST, PROMINENT) */}
+      <div className="bg-white p-4 sm:p-5 rounded-control border border-border space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xs font-heading font-bold text-asphalt flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-marking-yellow border border-asphalt" />
+            <span>Before and after fix</span>
+          </h2>
+          <span className="text-[11px] text-asphalt-muted">
+            {complaint.resolutionImageUrl ? 'Drag slider or use arrow keys' : 'Reported issue photo'}
+          </span>
+        </div>
+
+        {complaint.resolutionImageUrl ? (
+          <BeforeAfterSlider
+            beforeUrl={complaint.imageUrl}
+            afterUrl={complaint.resolutionImageUrl}
+            beforeDate={complaint.createdAt}
+            afterDate={officerResolveEvent?.timestamp || complaint.updatedAt}
+            beforeAuthor={complaint.reportedBy?.name || 'Citizen'}
+            afterAuthor="Field Officer"
+          />
+        ) : (
+          <div className="space-y-2">
+            <div className="relative w-full aspect-[16/10] rounded-control overflow-hidden border border-border bg-asphalt">
+              <Image
+                src={complaint.imageUrl}
+                alt="Reported problem condition"
+                fill
+                sizes="(max-width: 768px) 100vw, 700px"
+                className="object-cover"
+                priority
+                unoptimized={complaint.imageUrl.startsWith('data:')}
+              />
+              <span className="absolute top-3 left-3 px-2 py-0.5 rounded-plate bg-asphalt/85 text-white font-heading font-semibold text-xs border border-white/20">
+                {t.before}
+              </span>
             </div>
-
-            <div className="flex flex-wrap gap-3 pt-2">
-              <button
-                onClick={handleConfirmResolution}
-                disabled={verifying}
-                className="flex items-center space-x-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-md shadow-emerald-600/20 transition"
-              >
-                <CheckCircle2 className="w-4 h-4" />
-                <span>Confirm Fix (Resolution Satisfactory)</span>
-              </button>
-
-              <button
-                onClick={() => setShowContestModal(true)}
-                disabled={verifying}
-                className="flex items-center space-x-2 px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-md shadow-rose-600/20 transition"
-              >
-                <AlertOctagon className="w-4 h-4" />
-                <span>Contest / Reopen Ticket</span>
-              </button>
+            <div className="flex justify-between text-xs text-asphalt-muted px-1">
+              <span>Reported on {new Date(complaint.createdAt).toLocaleDateString('en-IN')}</span>
+              <span>Awaiting officer on-site resolution proof</span>
             </div>
           </div>
         )}
+      </div>
 
-        {/* Disputed Circuit Breaker Alert */}
-        {complaint.status === 'Disputed - Admin Review' && (
-          <div className="p-5 rounded-2xl bg-rose-50 border border-rose-200 flex items-start space-x-3">
-            <AlertOctagon className="w-6 h-6 text-rose-600 shrink-0 mt-0.5" />
+      {/* 4. CITIZEN AUDIT OR DISPUTE CIRCUIT BREAKER */}
+      {complaint.status === 'Pending Verification' && (
+        <div className="bg-white p-5 rounded-control border-2 border-signboard-blue space-y-3.5">
+          <div className="flex items-start gap-3">
+            <div className="w-8 h-8 rounded-plate bg-signboard-light border border-signboard-blue/40 flex items-center justify-center text-signboard-blue shrink-0">
+              <ShieldCheck className="w-5 h-5 stroke-[2.2]" />
+            </div>
             <div>
-              <h3 className="text-sm font-bold text-rose-900">Dispute Circuit Breaker Active</h3>
-              <p className="text-xs text-rose-700 mt-1 leading-relaxed">
-                This ticket has been contested 3 times by citizens. Automated reopen loop is locked and the ticket has been escalated directly to Municipal Commissioner Admin Review.
+              <h3 className="text-sm font-heading font-bold text-asphalt">
+                {t.citizenAuditTitle}
+              </h3>
+              <p className="text-xs text-asphalt-muted mt-0.5 leading-relaxed">
+                {t.citizenAuditSubtitle(remainingAuditDays)}
               </p>
             </div>
           </div>
-        )}
 
-        {/* Before / After Photo Comparison Viewer */}
-        <div className="space-y-3 pt-4 border-t border-slate-100">
-          <h2 className="text-sm font-bold uppercase tracking-wider text-slate-400">
-            Field Evidence & Resolution Verification
-          </h2>
+          <div className="flex flex-col sm:flex-row gap-2.5 pt-1">
+            <Button
+              variant="primary"
+              size="md"
+              disabled={verifying}
+              onClick={handleConfirmResolution}
+              className="flex-1"
+            >
+              <CheckCircle2 className="w-4 h-4 mr-1.5 stroke-[2.5]" />
+              <span>{t.yesFixed}</span>
+            </Button>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Before Photo */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-700 flex items-center space-x-1.5">
-                  <span className="w-2 h-2 rounded-full bg-red-500" />
-                  <span>Reported Condition (Before)</span>
-                </span>
-                <span className="text-[10px] text-slate-400">
-                  {new Date(complaint.createdAt).toLocaleDateString()}
-                </span>
-              </div>
-              <div className="rounded-2xl overflow-hidden border border-slate-200 bg-slate-900 aspect-video relative">
-                <img
-                  src={complaint.imageUrl}
-                  alt="Before"
-                  className="w-full h-full object-cover"
-                />
-              </div>
-            </div>
-
-            {/* After Photo */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-700 flex items-center space-x-1.5">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                  <span>Field Officer Resolution Proof (After)</span>
-                </span>
-                {complaint.resolutionImageUrl && (
-                  <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                    GPS-Verified Lock
-                  </span>
-                )}
-              </div>
-
-              {complaint.resolutionImageUrl ? (
-                <div className="rounded-2xl overflow-hidden border border-slate-200 bg-slate-900 aspect-video relative">
-                  <img
-                    src={complaint.resolutionImageUrl}
-                    alt="After"
-                    className="w-full h-full object-cover"
-                  />
-                </div>
-              ) : (
-                <div className="rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50 aspect-video flex flex-col items-center justify-center text-slate-400 p-4 text-center">
-                  <Clock className="w-8 h-8 mb-2 text-slate-300" />
-                  <p className="text-xs font-bold text-slate-500">Awaiting Field Officer Resolution</p>
-                  <p className="text-[10px] text-slate-400 mt-0.5">
-                    Officer must verify location within allowed GPS radius.
-                  </p>
-                </div>
-              )}
-            </div>
+            <Button
+              variant="destructive"
+              size="md"
+              disabled={verifying}
+              onClick={() => setShowContestSheet(true)}
+              className="flex-1"
+            >
+              <AlertTriangle className="w-4 h-4 mr-1.5 stroke-[2.5]" />
+              <span>{t.notFixed}</span>
+            </Button>
           </div>
         </div>
+      )}
 
-        {/* Append-Only Status Audit Timeline */}
-        <div className="space-y-4 pt-6 border-t border-slate-100">
-          <h2 className="text-sm font-bold uppercase tracking-wider text-slate-400">
-            Append-Only Audit Timeline ({complaint.statusHistory?.length || 0} Events)
-          </h2>
-
-          <div className="relative pl-6 space-y-6 before:absolute before:left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-200">
-            {complaint.statusHistory?.map((event: any, idx: number) => (
-              <div key={idx} className="relative group">
-                <div className="absolute -left-6 mt-1 w-3.5 h-3.5 rounded-full border-2 border-white bg-slate-900 shadow-sm" />
-
-                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-2">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex items-center space-x-2">
-                      <span className="text-xs font-bold text-slate-900">
-                        {event.actorId?.name || (event.role === 'citizen' ? 'Citizen' : 'Officer')}
-                      </span>
-                      <span className="text-[10px] uppercase font-bold px-1.5 py-0.2 rounded bg-slate-200 text-slate-700">
-                        {event.role}
-                      </span>
-                    </div>
-
-                    <span className="text-[11px] text-slate-400">
-                      {new Date(event.timestamp).toLocaleString()}
-                    </span>
-                  </div>
-
-                  <div className="flex items-center space-x-2">
-                    <span
-                      className={`text-xs font-bold px-2 py-0.5 rounded-md border ${getStatusBadge(
-                        event.status
-                      )}`}
-                    >
-                      {event.status}
-                    </span>
-                    {event.resolutionDistanceMeters !== undefined && (
-                      <span className="text-[10px] bg-blue-100 text-blue-800 font-bold px-2 py-0.5 rounded">
-                        GPS Proximity: {event.resolutionDistanceMeters}m (Acc: ±{event.locationAccuracy}m)
-                      </span>
-                    )}
-                  </div>
-
-                  {event.remarks && (
-                    <p className="text-xs text-slate-600 leading-relaxed">{event.remarks}</p>
-                  )}
-
-                  {event.imageUrl && (
-                    <div className="mt-2 w-32 h-20 rounded-lg overflow-hidden border border-slate-200 bg-slate-100">
-                      <img
-                        src={event.imageUrl}
-                        alt="Audit Attachment"
-                        className="w-full h-full object-cover"
-                      />
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))}
+      {complaint.status === 'Disputed - Admin Review' && (
+        <div className="p-4 bg-alert-light border border-alert-red/40 rounded-control flex items-start gap-3 text-xs text-alert-red">
+          <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
+          <div>
+            <p className="font-heading font-bold text-sm">Dispute circuit breaker active</p>
+            <p className="mt-0.5 leading-relaxed">
+              This issue was contested multiple times. It is locked in the municipal administration triage queue for commissioner arbitration.
+            </p>
           </div>
+        </div>
+      )}
+
+      {/* 5. CITIZEN ACTIONS: SUPPORT / SHARE */}
+      <div className="bg-white p-4 rounded-control border border-border flex items-center justify-between gap-3">
+        <div>
+          <span className="text-xs font-heading font-bold text-asphalt block">
+            Community priority
+          </span>
+          <span className="text-xs text-asphalt-muted">
+            {complaint.upvotesCount} citizens supported this issue
+          </span>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Button
+            variant={hasUpvoted ? 'secondary' : 'primary'}
+            size="md"
+            disabled={upvoting || hasUpvoted}
+            onClick={handleUpvote}
+          >
+            <ThumbsUp className={`w-4 h-4 mr-1.5 ${hasUpvoted ? 'fill-asphalt text-asphalt' : ''}`} />
+            <span>{hasUpvoted ? t.supported : t.supportReport}</span>
+          </Button>
         </div>
       </div>
 
-      {/* Contest Modal */}
-      {showContestModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-8 space-y-5 shadow-2xl border border-slate-200">
-            <div>
-              <div className="inline-flex items-center space-x-1 text-xs font-bold text-rose-600 bg-rose-50 px-2.5 py-1 rounded-full uppercase mb-2">
-                <span>Dispute #{complaint.reopenCount + 1}</span>
-                <span>&bull;</span>
-                <span>Max 2 Allowed</span>
-              </div>
-              <h3 className="text-xl font-bold text-slate-900">
-                Contest Resolution & Reopen Ticket
-              </h3>
-              <p className="text-xs text-slate-500 mt-1">
-                Provide detailed feedback on why this civic issue is still unresolved.
-              </p>
-            </div>
-
-            {complaint.reopenCount >= 2 && (
-              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 font-medium">
-                ⚠️ Circuit Breaker Warning: This will be the 3rd contest. The ticket will automatically escalate to <b>Disputed - Admin Review</b> for commissioner intervention.
-              </div>
-            )}
-
-            <form onSubmit={handleContestResolution} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-700">Remarks / Reason</label>
-                <textarea
-                  value={contestRemarks}
-                  onChange={(e) => setContestRemarks(e.target.value)}
-                  rows={3}
-                  placeholder="e.g. The pothole was merely filled with loose debris that washed away in rainfall..."
-                  className="mt-1 block w-full px-3 py-2 border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-rose-500"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700">Contest Photo Proof URL (Optional)</label>
-                <input
-                  type="url"
-                  value={contestImageUrl}
-                  onChange={(e) => setContestImageUrl(e.target.value)}
-                  placeholder="https://images.unsplash.com/... or data URL"
-                  className="mt-1 block w-full px-3 py-2 border border-slate-300 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-rose-500"
-                />
-              </div>
-
-              <div className="flex items-center justify-end space-x-3 pt-3">
-                <button
-                  type="button"
-                  onClick={() => setShowContestModal(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={verifying}
-                  className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-md shadow-rose-600/20 transition disabled:opacity-50"
-                >
-                  {verifying ? 'Submitting Dispute...' : 'Confirm Dispute & Reopen'}
-                </button>
-              </div>
-            </form>
-          </div>
+      {/* 6. SIGNATURE ELEMENT: TIMELINE (ROAD CENTRE-LINE MOTIF) */}
+      <div className="bg-white p-5 rounded-control border border-border space-y-4">
+        <div className="flex items-center justify-between border-b border-border pb-2.5">
+          <h2 className="text-sm font-heading font-bold text-asphalt">
+            {t.timelineTitle}
+          </h2>
+          <span className="text-[11px] text-asphalt-muted">
+            Append-only audit trail
+          </span>
         </div>
-      )}
+
+        <Timeline
+          statusHistory={complaint.statusHistory || []}
+          currentStatus={complaint.status}
+        />
+      </div>
+
+      {/* Contest Reopen Bottom Sheet */}
+      <BottomSheet
+        isOpen={showContestSheet}
+        onClose={() => setShowContestSheet(false)}
+        title="Contest resolution (Issue not fixed)"
+      >
+        <form onSubmit={handleContestResolution} className="space-y-4 py-2">
+          <p className="text-xs text-asphalt-muted leading-relaxed">
+            Explain what remains broken or why the officer&apos;s fix is incomplete. Your dispute will re-escalate the complaint.
+          </p>
+
+          <div>
+            <label className="block text-xs font-heading font-bold text-asphalt mb-1">
+              Dispute explanation (required)
+            </label>
+            <textarea
+              value={contestRemarks}
+              onChange={(e) => setContestRemarks(e.target.value)}
+              rows={3}
+              placeholder="e.g. The drain slab was placed loosely and rocks when walked on..."
+              className="w-full px-3 py-2 text-xs rounded-control border border-border bg-white text-asphalt focus:border-signboard-blue resize-none"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-heading font-bold text-asphalt mb-1">
+              Photo URL proof (optional)
+            </label>
+            <input
+              type="url"
+              value={contestImageUrl}
+              onChange={(e) => setContestImageUrl(e.target.value)}
+              placeholder="https://res.cloudinary.com/..."
+              className="w-full px-3 py-2 text-xs rounded-control border border-border bg-white text-asphalt focus:border-signboard-blue"
+            />
+          </div>
+
+          <div className="flex gap-2 pt-2 border-t border-border">
+            <Button
+              type="button"
+              variant="secondary"
+              fullWidth
+              onClick={() => setShowContestSheet(false)}
+            >
+              {t.cancel}
+            </Button>
+
+            <Button
+              type="submit"
+              variant="destructive"
+              fullWidth
+              disabled={verifying || !contestRemarks.trim()}
+            >
+              {verifying ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
+                  <span>Submitting dispute...</span>
+                </>
+              ) : (
+                <span>Submit dispute &amp; reopen</span>
+              )}
+            </Button>
+          </div>
+        </form>
+      </BottomSheet>
     </div>
   );
 }

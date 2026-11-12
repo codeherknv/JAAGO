@@ -1,208 +1,237 @@
 'use client';
 
-import React, { useState } from 'react';
+import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useSession, signOut } from 'next-auth/react';
 import {
-  MapPin,
-  AlertTriangle,
   Compass,
+  Plus,
+  FileText,
   Trophy,
-  ShieldCheck,
+  Shield,
   User,
   LogOut,
-  Menu,
-  X,
-  Sparkles,
-  FileText,
+  Sliders,
 } from 'lucide-react';
+import { useTranslation } from '@/lib/i18n';
+import { LanguageSwitch } from '@/components/ui/LanguageSwitch';
 
 export default function Navbar() {
   const pathname = usePathname();
   const { data: session } = useSession();
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const { t } = useTranslation();
 
-  const navLinks = [
-    { href: '/explore', label: 'Civic Map', icon: Compass },
-    { href: '/report', label: 'Report Issue', icon: AlertTriangle, highlight: true },
-    { href: '/leaderboard', label: 'Leaderboard', icon: Trophy },
-    ...(session?.user
-      ? [{ href: '/my-complaints', label: 'My Complaints', icon: FileText }]
-      : []),
-    {
-      href: '/officer/dashboard',
-      label: 'Officer Command',
-      icon: ShieldCheck,
-      badge: 'Pilot',
-    },
-  ];
+  const isOfficer = session?.user?.role === 'officer';
+  const isAdmin = session?.user?.role === 'admin';
 
   return (
-    <nav className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-slate-200">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between h-16 items-center">
-          {/* Logo */}
-          <Link href="/" className="flex items-center space-x-2.5 group">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-500 via-orange-500 to-emerald-600 flex items-center justify-center text-white shadow-md shadow-orange-500/20 group-hover:scale-105 transition-transform">
-              <span className="font-extrabold text-lg tracking-wider">जा</span>
-            </div>
-            <div>
-              <div className="flex items-center space-x-1.5">
-                <span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-orange-600 to-emerald-600">
-                  Jaago
-                </span>
-                <span className="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-300">
-                  Bengaluru Wards
-                </span>
-              </div>
-              <p className="text-[10px] text-slate-500 -mt-1 font-medium">
-                Geo-Intelligent Civic Redressal
-              </p>
-            </div>
-          </Link>
-
-          {/* Desktop Nav Items */}
-          <div className="hidden md:flex items-center space-x-1 lg:space-x-2">
-            {navLinks.map((item) => {
-              const Icon = item.icon;
-              const isActive = pathname === item.href;
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={`flex items-center space-x-1.5 px-3 py-2 rounded-lg text-sm font-semibold transition-all ${
-                    item.highlight
-                      ? 'bg-orange-500 text-white hover:bg-orange-600 shadow-sm shadow-orange-500/25'
-                      : isActive
-                      ? 'bg-slate-100 text-slate-900 border border-slate-200'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-                  }`}
-                >
-                  <Icon className={`w-4 h-4 ${item.highlight ? 'text-white' : 'text-slate-500'}`} />
-                  <span>{item.label}</span>
-                  {item.badge && (
-                    <span className="ml-1 text-[10px] bg-blue-100 text-blue-700 font-bold px-1.5 py-0.2 rounded-full">
-                      {item.badge}
+    <>
+      {/* Desktop Top Navigation Bar */}
+      <header className="sticky top-0 z-40 bg-white border-b border-border">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6">
+          <div className="flex items-center justify-between h-14">
+            {/* Brand Logo & Bengaluru Pilot Plate */}
+            <div className="flex items-center gap-3">
+              <Link
+                href="/explore"
+                className="flex items-center gap-2.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-signboard-blue rounded-control p-1"
+              >
+                {/* Physical Street Mile-Marker Badge */}
+                <div className="flex items-center justify-center w-8 h-8 rounded-plate bg-asphalt text-marking-yellow font-heading font-black text-sm tracking-tight border border-asphalt">
+                  JG
+                </div>
+                <div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-heading font-bold text-base text-asphalt leading-none">
+                      Jaago
                     </span>
-                  )}
-                </Link>
-              );
-            })}
-          </div>
-
-          {/* User Section & Auth */}
-          <div className="hidden md:flex items-center space-x-3">
-            {session?.user ? (
-              <div className="flex items-center space-x-2.5 bg-slate-50 border border-slate-200 rounded-full pl-3 pr-2 py-1.5">
-                <div className="text-left">
-                  <p className="text-xs font-semibold text-slate-900 truncate max-w-[130px]">
-                    {session.user.name || session.user.email}
-                  </p>
-                  <div className="flex items-center space-x-1">
-                    <span
-                      className={`inline-block w-1.5 h-1.5 rounded-full ${
-                        session.user.role === 'officer'
-                          ? 'bg-emerald-500'
-                          : session.user.role === 'admin'
-                          ? 'bg-purple-500'
-                          : 'bg-blue-500'
-                      }`}
-                    />
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                      {session.user.role}
+                    <span className="px-1.5 py-0.5 rounded-plate bg-kerb text-asphalt-muted font-heading font-medium text-[11px] border border-border">
+                      Bengaluru
                     </span>
                   </div>
-                </div>
-
-                <button
-                  onClick={() => signOut({ callbackUrl: '/' })}
-                  title="Sign out"
-                  className="p-1.5 rounded-full text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
-                >
-                  <LogOut className="w-4 h-4" />
-                </button>
-              </div>
-            ) : (
-              <Link
-                href="/login"
-                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 text-sm font-semibold transition"
-              >
-                <User className="w-4 h-4 text-slate-500" />
-                <span>Sign In / Demo</span>
-              </Link>
-            )}
-          </div>
-
-          {/* Mobile menu toggle */}
-          <div className="md:hidden flex items-center space-x-2">
-            <button
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="p-2 rounded-lg text-slate-600 hover:bg-slate-100"
-              aria-label="Toggle Navigation"
-            >
-              {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Mobile Drawer */}
-      {mobileMenuOpen && (
-        <div className="md:hidden border-b border-slate-200 bg-white px-4 pt-3 pb-5 space-y-2">
-          {navLinks.map((item) => {
-            const Icon = item.icon;
-            const isActive = pathname === item.href;
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={() => setMobileMenuOpen(false)}
-                className={`flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-semibold ${
-                  isActive ? 'bg-slate-100 text-slate-900' : 'text-slate-600 hover:bg-slate-50'
-                }`}
-              >
-                <div className="flex items-center space-x-2.5">
-                  <Icon className="w-4 h-4 text-slate-500" />
-                  <span>{item.label}</span>
-                </div>
-                {item.badge && (
-                  <span className="text-[10px] bg-blue-100 text-blue-700 font-bold px-2 py-0.5 rounded-full">
-                    {item.badge}
-                  </span>
-                )}
-              </Link>
-            );
-          })}
-
-          <div className="pt-3 border-t border-slate-100">
-            {session?.user ? (
-              <div className="flex items-center justify-between py-2">
-                <div>
-                  <p className="text-sm font-semibold text-slate-900">{session.user.name}</p>
-                  <p className="text-xs text-slate-500 capitalize">
-                    {session.user.role} &bull; {session.user.email}
+                  <p className="text-[11px] text-asphalt-muted font-sans leading-none mt-0.5">
+                    Civic redressal &amp; accountability
                   </p>
                 </div>
-                <button
-                  onClick={() => signOut({ callbackUrl: '/' })}
-                  className="px-3 py-1.5 rounded-md text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100"
-                >
-                  Sign Out
-                </button>
-              </div>
-            ) : (
-              <Link
-                href="/login"
-                onClick={() => setMobileMenuOpen(false)}
-                className="w-full text-center block py-2.5 rounded-lg bg-slate-900 text-white font-semibold text-sm"
-              >
-                Sign In / Demo Roles
               </Link>
-            )}
+            </div>
+
+            {/* Desktop Navigation Links */}
+            <nav className="hidden md:flex items-center gap-1">
+              <Link
+                href="/explore"
+                className={`min-h-[40px] px-3 py-2 rounded-control font-heading text-xs font-semibold transition-colors ${
+                  pathname === '/explore' || pathname === '/'
+                    ? 'bg-kerb text-asphalt border border-border'
+                    : 'text-asphalt-muted hover:text-asphalt hover:bg-kerb/60'
+                }`}
+              >
+                {t.explore}
+              </Link>
+
+              <Link
+                href="/leaderboard"
+                className={`min-h-[40px] px-3 py-2 rounded-control font-heading text-xs font-semibold transition-colors ${
+                  pathname === '/leaderboard'
+                    ? 'bg-kerb text-asphalt border border-border'
+                    : 'text-asphalt-muted hover:text-asphalt hover:bg-kerb/60'
+                }`}
+              >
+                {t.leaderboard}
+              </Link>
+
+              {session?.user && (
+                <Link
+                  href="/my-complaints"
+                  className={`min-h-[40px] px-3 py-2 rounded-control font-heading text-xs font-semibold transition-colors ${
+                    pathname === '/my-complaints'
+                      ? 'bg-kerb text-asphalt border border-border'
+                      : 'text-asphalt-muted hover:text-asphalt hover:bg-kerb/60'
+                  }`}
+                >
+                  {t.myComplaints}
+                </Link>
+              )}
+
+              {(isOfficer || isAdmin) && (
+                <Link
+                  href="/officer/dashboard"
+                  className={`min-h-[40px] px-3 py-2 rounded-control font-heading text-xs font-semibold transition-colors ${
+                    pathname === '/officer/dashboard'
+                      ? 'bg-kerb text-asphalt border border-border'
+                      : 'text-asphalt-muted hover:text-asphalt hover:bg-kerb/60'
+                  }`}
+                >
+                  {t.officer}
+                </Link>
+              )}
+
+              {isAdmin && (
+                <Link
+                  href="/admin"
+                  className={`min-h-[40px] px-3 py-2 rounded-control font-heading text-xs font-semibold transition-colors ${
+                    pathname === '/admin'
+                      ? 'bg-kerb text-asphalt border border-border'
+                      : 'text-asphalt-muted hover:text-asphalt hover:bg-kerb/60'
+                  }`}
+                >
+                  {t.admin}
+                </Link>
+              )}
+            </nav>
+
+            {/* Desktop Actions: Report, Language, User Profile */}
+            <div className="hidden md:flex items-center gap-2.5">
+              <LanguageSwitch />
+
+              <Link
+                href="/report"
+                className="inline-flex items-center gap-1.5 min-h-[40px] px-3.5 py-2 rounded-control bg-marking-yellow hover:bg-marking-hover active:bg-marking-hover text-asphalt font-heading font-semibold text-xs border border-[#D9A304] transition-colors"
+              >
+                <Plus className="w-4 h-4 stroke-[2.5]" />
+                <span>{t.reportProblem}</span>
+              </Link>
+
+              {session?.user ? (
+                <div className="flex items-center gap-2 pl-2 border-l border-border">
+                  <div className="text-right">
+                    <p className="text-xs font-heading font-bold text-asphalt truncate max-w-[120px]">
+                      {session.user.name || session.user.email}
+                    </p>
+                    <p className="text-[10px] text-asphalt-muted capitalize">
+                      {session.user.role}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => signOut({ callbackUrl: '/login' })}
+                    title={t.signOut}
+                    className="p-2 rounded-control text-asphalt-muted hover:text-alert-red hover:bg-kerb transition-colors"
+                  >
+                    <LogOut className="w-4 h-4" />
+                  </button>
+                </div>
+              ) : (
+                <Link
+                  href="/login"
+                  className="min-h-[40px] px-3 py-2 rounded-control border border-border text-xs font-heading font-semibold text-asphalt hover:bg-kerb transition-colors"
+                >
+                  {t.signIn}
+                </Link>
+              )}
+            </div>
+
+            {/* Mobile Top Header: Brand + Language */}
+            <div className="flex md:hidden items-center gap-2">
+              <LanguageSwitch />
+              {!session?.user && (
+                <Link
+                  href="/login"
+                  className="px-2.5 py-1 text-xs font-heading font-semibold text-asphalt border border-border rounded-control"
+                >
+                  {t.signIn}
+                </Link>
+              )}
+            </div>
           </div>
         </div>
-      )}
-    </nav>
+      </header>
+
+      {/* Mobile Bottom Tab Bar (Quality Floor Standard) */}
+      <nav
+        aria-label="Mobile Navigation"
+        className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-border px-2 py-1 safe-area-pb"
+      >
+        <div className="flex items-center justify-around h-14 max-w-md mx-auto relative">
+          {/* Tab 1: Explore */}
+          <Link
+            href="/explore"
+            className={`flex flex-col items-center justify-center min-w-[54px] min-h-[44px] rounded-control text-[11px] font-heading font-semibold transition-colors ${
+              pathname === '/explore' || pathname === '/'
+                ? 'text-asphalt'
+                : 'text-asphalt-muted'
+            }`}
+          >
+            <Compass className={`w-5 h-5 ${pathname === '/explore' || pathname === '/' ? 'stroke-[2.5]' : 'stroke-[1.75]'}`} />
+            <span className="mt-0.5">{t.explore}</span>
+          </Link>
+
+          {/* Tab 2: Floating Primary Report Button */}
+          <Link
+            href="/report"
+            aria-label={t.reportProblem}
+            className="flex items-center justify-center w-12 h-12 -mt-4 rounded-full bg-marking-yellow hover:bg-marking-hover text-asphalt border-2 border-asphalt shadow-float transition-transform active:scale-95"
+          >
+            <Plus className="w-6 h-6 stroke-[3]" />
+          </Link>
+
+          {/* Tab 3: My Complaints */}
+          <Link
+            href={session?.user ? '/my-complaints' : '/login'}
+            className={`flex flex-col items-center justify-center min-w-[54px] min-h-[44px] rounded-control text-[11px] font-heading font-semibold transition-colors ${
+              pathname === '/my-complaints'
+                ? 'text-asphalt'
+                : 'text-asphalt-muted'
+            }`}
+          >
+            <FileText className={`w-5 h-5 ${pathname === '/my-complaints' ? 'stroke-[2.5]' : 'stroke-[1.75]'}`} />
+            <span className="mt-0.5">{t.myComplaints}</span>
+          </Link>
+
+          {/* Tab 4: Leaderboard / Profile */}
+          <Link
+            href="/leaderboard"
+            className={`flex flex-col items-center justify-center min-w-[54px] min-h-[44px] rounded-control text-[11px] font-heading font-semibold transition-colors ${
+              pathname === '/leaderboard'
+                ? 'text-asphalt'
+                : 'text-asphalt-muted'
+            }`}
+          >
+            <Trophy className={`w-5 h-5 ${pathname === '/leaderboard' ? 'stroke-[2.5]' : 'stroke-[1.75]'}`} />
+            <span className="mt-0.5">{t.leaderboard}</span>
+          </Link>
+        </div>
+      </nav>
+    </>
   );
 }

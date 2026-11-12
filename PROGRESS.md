@@ -165,5 +165,74 @@ $$\text{CTI} = \text{round}\Big(100 \times \big[0.4 \times \text{CitizenVerified
   19. "My Complaints" API & UI: verified `GET /api/complaints/my` returns logged-in citizen's complaints including unrouted tickets with `routingStatus: "Waiting for routing"` and rejects anonymous calls with 401
 - `npm run test:spatial`: **PASS (3 / 3 passed)**
 - `npm run test:e2e`: **PASS (7 / 7 passed)**
-- `npm run lint`: **PASS (0 errors, 12 warnings for unoptimized images / react hooks dependencies)**
-- `npm run build`: **PASS (Next.js production build compiled successfully, 11 static/dynamic routes generated)**
+- `npm run lint`: **PASS (0 errors, 5 warnings for unoptimized images / react hooks dependencies)**
+- `npm run build`: **PASS (Next.js production build compiled successfully, 12 static/dynamic routes generated)**
+
+---
+
+## UI Redesign: Calm Street Infrastructure (Stages 0 to 3)
+
+### Overview
+A comprehensive civic redesign aligned with real-world Bengaluru municipal street infrastructure. The redesign completely avoids generic SaaS templates and corporate marketing tropes in favor of high-contrast, sunlight-legible public utility styling. Light mode only.
+
+### Stage 0: Design Plan (`docs/DESIGN.md`)
+- **Tokens & Variables:**
+  - `asphalt` (`#23272B`) and `asphalt-muted` (`#5A6065`) for primary text and road elements.
+  - `kerb` (`#F2F4F3`) for flat concrete neutral background (strictly non-cream).
+  - `marking-yellow` (`#F2B705`) for primary action buttons, active tabs, and slider handles.
+  - `signboard-blue` (`#0B5D8C`) for informational badges and civic boundaries.
+  - `fixed-green` (`#1E8E5A`) for verified resolutions and success states.
+  - `alert-red` (`#C8372D`) for SLA overdue warnings and contested resolutions.
+- **Typography:**
+  - Headings: `Archivo` (bold/semibold, tight tracking, civic punch).
+  - Body: `Noto Sans` (plain, humanist, left-aligned, lines $< 70$ characters).
+  - Kannada: `Noto Sans Kannada` rendered at $+1\text{px}$ and line-height $\ge 1.65$ to prevent diacritic clipping.
+- **Radius System:**
+  - `2px` (`rounded-plate`): Enamel street badges, status plates, category tags.
+  - `8px` (`rounded-control`): Interactive buttons, input fields, bottom sheets.
+  - `full` (`rounded-full`): Circular floating report button, avatars.
+- **Wireframes:** Complete ASCII wireframes for `/report` and `/complaints/[id]` at 390px mobile viewport.
+- **Audit Against 11 Tells to Avoid:** Thoroughly audited and revised to prevent template tropes (no cream backgrounds, no purple gradients, no soft card shadows, no all-caps tracking, no decorative 01/02 numbering, no emoji icons, no hover-lift).
+
+---
+
+### Stage 1: Design System & Foundations
+- **Tailwind & CSS Tokens:** Configured semantic color names, font families, and plate radii in [`tailwind.config.js`](file:///C:/Users/91701/OneDrive/Desktop/JAAGO/tailwind.config.js) and [`app/globals.css`](file:///C:/Users/91701/OneDrive/Desktop/JAAGO/app/globals.css).
+- **Bilingual i18n (`lib/i18n.tsx`):** Complete Kannada and English localization context provider, language toggle, and dictionary with native-speaker verification checklist.
+- **Navigation (`components/Navbar.tsx`):**
+  - Desktop: Top bar with physical yellow mile-marker logo, English/Kannada toggle, and primary report button.
+  - Mobile: Bottom tab bar (Explore, Report, My complaints, Leaderboard) with raised circular yellow center button (`#F2B705`, 48px tap target) and safe-area padding (`pb-20` on pages).
+- **Core Component Library:**
+  - [`components/ui/Button.tsx`](file:///C:/Users/91701/OneDrive/Desktop/JAAGO/components/ui/Button.tsx): Primary yellow, secondary white/border, destructive red, and ghost variants with $\ge 44\text{px}$ touch targets.
+  - [`components/ui/StatusBadge.tsx`](file:///C:/Users/91701/OneDrive/Desktop/JAAGO/components/ui/StatusBadge.tsx): 2px enamel plates with shape-coded icons + text + color.
+  - [`components/ui/ComplaintRow.tsx`](file:///C:/Users/91701/OneDrive/Desktop/JAAGO/components/ui/ComplaintRow.tsx): Flat 1px-divided list item with thumbnail, address, distance, status plate, and upvotes.
+  - [`components/ui/BeforeAfterSlider.tsx`](file:///C:/Users/91701/OneDrive/Desktop/JAAGO/components/ui/BeforeAfterSlider.tsx): Interactive touch/pointer/keyboard comparison slider with center divider, marking yellow handle, and image load fallbacks.
+  - [`components/ui/Timeline.tsx`](file:///C:/Users/91701/OneDrive/Desktop/JAAGO/components/ui/Timeline.tsx): Vertical road centerline with solid lines for past actions, dashed lines for upcoming verification, GPS accuracy metrics, and safe photo proof thumbnails.
+  - [`components/ui/BottomSheet.tsx`](file:///C:/Users/91701/OneDrive/Desktop/JAAGO/components/ui/BottomSheet.tsx): Sliding bottom sheet with drag bar for mobile-first workflows.
+  - [`components/ui/EmptyState.tsx`](file:///C:/Users/91701/OneDrive/Desktop/JAAGO/components/ui/EmptyState.tsx) & [`components/ui/Skeleton.tsx`](file:///C:/Users/91701/OneDrive/Desktop/JAAGO/components/ui/Skeleton.tsx): Purpose-driven states without marketing fluff.
+- **Component Showcase (`app/dev/components/page.tsx`):** Living styleguide demonstrating all color tokens, typography scales, buttons, badges, rows, and sliders.
+
+---
+
+### Stage 2: 3-Step Report Flow (`app/report/page.tsx`)
+Redesigned for citizens outdoors on phones, often one-handed:
+1. **Step 1 (Evidence First):** Immediate outdoor camera capture button, file chooser fallback, photo preview, and retake option.
+2. **Step 2 (Location & Duplicates):** Automatic geolocation with live GPS accuracy readout (`±X m`), interactive Leaflet mini-map ([`components/LocationMiniMap.tsx`](file:///C:/Users/91701/OneDrive/Desktop/JAAGO/components/LocationMiniMap.tsx)), and non-blocking duplicate detection rendering matches as `ComplaintRow` with direct "Support this report" action.
+3. **Step 3 (Categorization & Review):** Large category chips, problem description, concise review plate, and primary submission button.
+
+---
+
+### Stage 3: Complaint Detail & Verification (`app/complaints/[id]/page.tsx`)
+- **Slider First:** `BeforeAfterSlider` is the first visual element, comparing original report photo with on-site resolution photo.
+- **Citizen Audit Box:** Prominent for `Pending Verification` complaints showing remaining verification countdown, primary "Yes, it's fixed" confirmation, and "Not fixed" contest trigger (opens dispute bottom sheet).
+- **Community Priority Counter:** Direct upvote/support button with real-time tally.
+- **Road Centerline Timeline:** Append-only history with actor badges, timestamps, remarks, GPS accuracy indicators, and offline-resilient proof photo thumbnails.
+
+---
+
+### Visual Verification & Screenshot Evidence
+All captures recorded via headless Chrome and stored in `docs/screenshots/`:
+- `docs/screenshots/report-390px.png` & `report-1280px.png`: 3-step report flow with camera capture, GPS indicator, and duplicate preview.
+- `docs/screenshots/complaint-390px.png` & `complaint-1280px.png`: Complaint detail view with Before/After slider, citizen audit action, and road timeline.
+- `docs/screenshots/components-390px.png` & `components-1280px.png`: Component system swatch palette, status badges, rows, and buttons.
+

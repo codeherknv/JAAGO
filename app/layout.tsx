@@ -1,12 +1,33 @@
 import type { Metadata } from 'next';
+import { Archivo, Noto_Sans, Noto_Sans_Kannada } from 'next/font/google';
 import './globals.css';
 import Providers from '@/components/Providers';
 import Navbar from '@/components/Navbar';
 
+const archivo = Archivo({
+  subsets: ['latin'],
+  variable: '--font-archivo',
+  display: 'swap',
+});
+
+const notoSans = Noto_Sans({
+  subsets: ['latin'],
+  weight: ['400', '500', '600', '700'],
+  variable: '--font-noto-sans',
+  display: 'swap',
+});
+
+const notoSansKannada = Noto_Sans_Kannada({
+  subsets: ['kannada'],
+  weight: ['400', '500', '600', '700'],
+  variable: '--font-noto-kannada',
+  display: 'swap',
+});
+
 export const metadata: Metadata = {
-  title: 'Jaago | Geo-Intelligent Civic Redressal & Accountability Platform',
+  title: 'Jaago | Greater Bengaluru Civic Redressal',
   description:
-    'Piloted in Greater Bengaluru Authority (Bellandur, HSR Layout, Koramangala). High-precision spatial deduplication, verified field resolution, and civic trust tracking.',
+    'Geo-intelligent civic complaint tracker and accountability platform piloted for Bellandur, HSR Layout, and Koramangala.',
   icons: {
     icon: '/favicon.ico',
   },
@@ -18,7 +39,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html
+      lang="en"
+      className={`${archivo.variable} ${notoSans.variable} ${notoSansKannada.variable}`}
+    >
       <head>
         <link
           rel="stylesheet"
@@ -27,18 +51,14 @@ export default function RootLayout({
           crossOrigin=""
         />
       </head>
-      <body className="bg-slate-50 text-slate-900 antialiased font-sans flex flex-col min-h-screen">
+      <body className="bg-kerb text-asphalt antialiased font-sans flex flex-col min-h-screen selection:bg-marking-yellow selection:text-asphalt">
         <Providers>
           <Navbar />
-          <main className="flex-1">{children}</main>
-          <footer className="bg-white border-t border-slate-200 py-6 text-center text-xs text-slate-500">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row justify-between items-center space-y-2 sm:space-y-0">
-              <div className="flex items-center space-x-2">
-                <span className="font-bold text-slate-800">Jaago Platform</span>
-                <span>&bull;</span>
-                <span>Greater Bengaluru Authority Pilot (Wards 150, 174, 151)</span>
-              </div>
-              <p>Civic Trust Index (CTI) &bull; Open Redressal Standard</p>
+          <main className="flex-1 pb-16 md:pb-0">{children}</main>
+          <footer className="hidden md:block bg-white border-t border-border py-4 text-xs text-asphalt-muted font-heading">
+            <div className="max-w-6xl mx-auto px-4 sm:px-6 flex justify-between items-center">
+              <span>Jaago &bull; Greater Bengaluru Authority Pilot (Wards 150, 174, 151)</span>
+              <span>Open civic accountability &amp; audit standard</span>
             </div>
           </footer>
         </Providers>
