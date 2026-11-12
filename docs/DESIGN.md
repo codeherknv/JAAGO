@@ -33,8 +33,10 @@ Jaago is a public civic complaint tracker and accountability platform piloted fo
 | `color-fixed-green-light` | `#EAF6F0` | Background tint for green status plates |
 | `color-alert-red` | `#C8372D` | 'Rejected - Invalid', overdue SLA markers, error messages |
 | `color-alert-red-light` | `#FBEBEA` | Background tint for red alert plates |
-| `color-attention-amber` | `#D97706` | 'Pending', 'In Progress', 'Reopened - Escalated' status |
+| `color-attention-amber` | `#D97706` | 'Pending', 'In Progress' status |
 | `color-attention-amber-light` | `#FEF3C7` | Background tint for amber status plates |
+| `color-dispute-purple` | `#7C3AED` | 'Reopened - Escalated' and 'Disputed - Admin Review' status pins and badge borders |
+| `color-dispute-purple-light` | `#F5F3FF` | Background tint for purple status plates and map pin rings |
 
 ### 2.2 Typography Scale
 - **Display & Headings:** `Archivo` (variable width/weight, deliberate tracking, tight at large sizes).
@@ -278,22 +280,23 @@ All screen sizes verified and saved in `docs/screenshots/`:
      - *In Progress:* Square Plate (`rounded-plate bg-marking-yellow`, dark asphalt border and core)
      - *Pending Verification:* Diamond (`rotate-45 bg-signboard-blue`, white border and core)
      - *Resolved:* Enamel Plate (`rounded-plate bg-fixed-green`, white border, white dot)
-     - *Reopened / Disputed:* Alert Plate (`bg-alert-red`, asphalt border, yellow dot)
+     - *Reopened / Disputed:* Distinct Purple Ring Marker (`rounded-plate bg-purple-600`, white core, purple outer halo `#7C3AED`)
    - **Controls:** Floating top bar with horizontal-scrolling category chips, ward selector, refresh button, and prominent marking yellow `+ Report a problem` button.
+   - **Map Provider Configuration:** Dynamic tile source configurable via `NEXT_PUBLIC_TILE_URL` and `NEXT_PUBLIC_TILE_ATTRIBUTION` env variables with fallback to OpenStreetMap. Low-saturation road aesthetic enforced via CSS filter (`filter: grayscale(45%) contrast(92%)`).
    - **Interaction:** Tapping any marker opens a `BottomSheet` presenting the issue as a full `ComplaintRow` with immediate "View details" link.
 
 2. **`/officer/dashboard` (Field Command Queue):**
-   - **Responsive Layout:** On desktop (1280px), 7-column prioritized list on the left and 5-column sticky GIS map on the right. On mobile (390px), stacked list layout.
-   - **Urgency Metrics:** Every ticket displays its Civic Priority score (`P: 14.5`), days open (`0h open` / `2d open`), category plate, and status badge.
+   - **Responsive Layout:** On desktop (1280px), prioritized list on the left and sticky GIS map on the right. On mobile (390px), stacked list layout.
+   - **Urgency Metrics:** Replaced raw numeric scores (e.g. `P: 14.5`) with plain-language civic priority sentences (e.g. `"High priority: 3 supporters, open 1d, Roads SLA"`), moving the raw mathematical score strictly to an accessible `title` tooltip.
    - **Plain GPS Result:** Plain physical distance readout (`"You're 12 m from the site (accuracy: ±8 m)"`) with green on-site badge ($\le 50\text{m}$) or red out-of-range indicator ($> 50\text{m}$).
-   - **Camera Stream with Fallback:** Native HTML5 video camera stream with capture canvas, accompanied by a desktop file upload fallback.
+   - **Camera Stream with Lifecycle Management & Fallback:** Native HTML5 video camera stream that stops all active media tracks on close or unmount. If camera permission is denied, displays a clear warning banner with a direct device file upload button.
 
 3. **`/leaderboard` (Municipal CTI Ranking):**
    - **Plain Explanatory Sentence:** *"The Civic Trust Index measures how reliably and promptly municipal complaints are resolved and verified by citizens."*
    - **Flat Ranked List:** Replaced all 3-card marketing podiums with a single, flat 1px-divided plate.
    - **Sample Size Beside Every Score:** Shows sample size next to CTI (e.g. `(12 closed)` or `(1 of 10 closed)`).
    - **Statistical Significance Threshold:** Wards with $< 10$ closed complaints explicitly show `"Not enough data (X of 10 closed)"`.
-   - **Side-by-Side Metrics:** Citizen verified and auto-closed counts displayed side by side (`Citizen verified: 1 | Auto-closed: 0`), with participation rate and overdue open rate beside the CTI.
+   - **Side-by-Side Metrics:** Citizen verified and auto-closed counts displayed side by side (`Citizen verified: 2 | Auto-closed: 1`), with participation rate and overdue open rate beside the CTI.
 
 4. **`/my-complaints` (Citizen History):**
    - Flat list using `ComplaintRow` components.
@@ -303,32 +306,44 @@ All screen sizes verified and saved in `docs/screenshots/`:
 
 5. **`/admin` (Municipal Control Center):**
    - Clean tabular views for Officer Allow-List, Unrouted Triage Queue, Disputed Review, and Invalidation.
-   - Accessible modal confirmation dialogs for all mutating actions (deactivate officer, assign ward/agency, arbitrate dispute, invalidate report).
-   - Replaced all raw `<img>` tags with Next.js `<Image unoptimized />`.
+   - Full keyboard accessibility: Modal confirmation dialogs (`<Modal>`) trap focus inside the dialog, close on Escape, and return focus to the trigger button upon dismissal.
+   - Replaced all raw `<img>` tags with Next.js `<Image unoptimized />` for client data blobs and strict remotePatterns for Cloudinary assets.
 
 6. **`/login` (Identity Portal):**
    - Mile-marker `JG` yellow badge.
-   - 1-click persona buttons with role plate badges (Officer, Citizen, Admin).
+   - 1-click persona buttons conditionally rendered only when `DEMO_AUTH=true`.
    - Clean 8px input controls in pure kerb/asphalt styling.
 
-### 7.2 Stage 4 Squint-Test & Critique Log
-- **Critique 1 (Base Map Tiles):** Initial use of CartoDB tiles produced an unsightly "API KEY REQUIRED" watermark diagonally across the map.  
-  *Fix:* Replaced CartoDB tiles with standard OpenStreetMap tiles paired with a CSS filter `.leaflet-tile-pane { filter: grayscale(45%) contrast(92%); }`. Results in clean, low-saturation street map rendering with zero watermarks.
-- **Critique 2 (Broken Thumbnails):** When complaints referenced mock Cloudinary URLs in local dev/tests, `ComplaintRow` displayed the browser's default broken image icon.  
-  *Fix:* Added an `onError` fallback state to `ComplaintRow` that seamlessly renders a neutral kerb plate with a map pin icon whenever an asset fails to load.
-- **Critique 3 (Visual Hierarchy):** On desktop, the 7/5 split in `/officer/dashboard` allows the officer to review their priority queue without losing spatial context on the right-hand map.
+### 7.2 Honest Visual Critique of Remaining Issues (Post-Stage 4 Re-Capture)
+Following high-resolution screenshot recapture at 390px and 1280px via Chrome DevTools Protocol, the following visual flaws were honestly observed:
+
+1. **Dual Action Buttons on Desktop (`/explore` and `/my-complaints`):**
+   - *Observation:* On 1280px desktop, the top navigation header renders a yellow `+ Report a problem` button, and the page contents simultaneously render another yellow `+ Report a problem` button within 50–100px.
+   - *Assessment:* Having two prominent primary buttons on the same desktop viewport creates visual competition. The in-page button could be omitted on desktop since the global header button is always visible.
+2. **Wide Table Horizontal Scrolling on Mobile (`/admin`):**
+   - *Observation:* On 390px mobile, the 6-column officer allow-list table overflows horizontally. Only Officer Name and Email are visible without swiping sideways.
+   - *Assessment:* Responsive cards/stacked plates on `< 640px` screens would be much more readable than a wide data table.
+3. **Priority Sentence Badge Wrapping on Desktop (`/officer/dashboard`):**
+   - *Observation:* On tickets with long category names (e.g. `Water Supply & Drainage SLA`), the `5d open` label right next to the priority pill wraps onto a second line in narrow list columns.
+   - *Assessment:* Truncating category names or using flex-wrap with explicit gap prevents awkward single-word wrapping.
+4. **Large Lateral Margins on Desktop (`/leaderboard` and `/admin`):**
+   - *Observation:* The `max-w-4xl` and `max-w-6xl` containers leave wide blank kerb gutters on monitors $\ge 1280\text{px}$.
+   - *Assessment:* The centered single-column layout is legible, but secondary information (e.g. city-wide aggregate statistics or agency breakdown) could fill the wide sidebar on large desktop screens.
+5. **Color Contrast on Before/After Comparison Handle (`/complaints/[id]`):**
+   - *Observation:* The comparison slider drag handle is marking yellow (`#F2B705`) with white `<>` arrow glyphs.
+   - *Assessment:* White glyphs on yellow have lower contrast ratio (~1.8:1); asphalt-colored glyphs (`#23272B`) on yellow would achieve WCAG AAA contrast (> 7:1).
 
 ### 7.3 Complete Screenshot Catalog (18 Artifacts in `docs/screenshots/`)
 | Page | 390px Mobile | 1280px Desktop | Key Elements Verified |
 | :--- | :--- | :--- | :--- |
-| **Explore** | `explore-390px.png` | `explore-1280px.png` | Full-screen map, muted tiles, shape/color pins, filter chips, yellow report button |
-| **Officer Dashboard** | `officer-dashboard-390px.png` | `officer-dashboard-1280px.png` | 7/5 split desktop, stacked mobile, priority score, days open, GPS readout |
+| **Home** | `home-390px.png` | `home-1280px.png` | Concrete headline, asphalt/signaling accents, thumb-friendly CTAs |
+| **Explore** | `explore-390px.png` | `explore-1280px.png` | Full-screen map, muted tiles, shape/color pins, distinct purple Reopened pins, attribution |
+| **Report** | `report-390px.png` | `report-1280px.png` | 3-step wizard, live camera cleanup, permission denied fallback, GPS confirmation |
+| **Complaint Detail** | `complaint-detail-390px.png` | `complaint-detail-1280px.png` | Before/After interactive slider, road centerline timeline, citizen audit |
 | **Leaderboard** | `leaderboard-390px.png` | `leaderboard-1280px.png` | Plain explanatory sentence, ranked list, sample size, verified & auto-closed side by side |
 | **My Complaints** | `my-complaints-390px.png` | `my-complaints-1280px.png` | KPI metric plates, filter chips, ComplaintRow list, waiting for routing badges |
-| **Admin** | `admin-390px.png` | `admin-1280px.png` | Clean tables, officer allow-list, triage queue, dispute review, confirmation dialogs |
-| **Login** | `login-390px.png` | `login-1280px.png` | JG mile-marker logo, 1-click personas, role badges, clean inputs |
-| **Report** | `report-390px.png` | `report-1280px.png` | 3-step sheet, live camera shutter, GPS readout, inline duplicate detection |
-| **Complaint Detail** | `complaint-390px.png` | `complaint-1280px.png` | Before/After slider anchor, citizen audit action, road centerline timeline |
-| **Components** | `components-390px.png` | `components-1280px.png` | Living design system styleguide, color tokens, button variants, badges |
+| **Admin** | `admin-390px.png` | `admin-1280px.png` | Clean tables, officer allow-list, triage queue, dispute review, accessible `<Modal>` dialogs |
+| **Login** | `login-390px.png` | `login-1280px.png` | JG mile-marker logo, DEMO_AUTH conditional persona buttons, role badges |
+| **Officer Dashboard** | `officer-dashboard-390px.png` | `officer-dashboard-1280px.png` | Plain priority explanation sentence, desktop split-screen / mobile stack, camera cleanup |
 
 

@@ -1,3 +1,5 @@
+import fs from 'fs';
+import path from 'path';
 import bcrypt from 'bcryptjs';
 import { connectToDatabase } from '../lib/mongodb';
 import { Ward } from '../models/Ward';
@@ -7,6 +9,21 @@ import { User } from '../models/User';
 import { Complaint } from '../models/Complaint';
 import { Vote } from '../models/Vote';
 import { reconcileAllVotes } from '../lib/reconcileVotes';
+
+export function loadSeedPhotos(): string[] {
+  try {
+    const photosPath = path.join(process.cwd(), 'seed', 'photos.json');
+    if (fs.existsSync(photosPath)) {
+      const data = JSON.parse(fs.readFileSync(photosPath, 'utf-8'));
+      if (Array.isArray(data) && data.length > 0) {
+        return data;
+      }
+    }
+  } catch (err) {
+    console.warn('Could not read seed/photos.json, falling back to default photos:', err);
+  }
+  return [];
+}
 
 export const BENGALURU_WARDS = [
   {
@@ -212,11 +229,18 @@ export async function seedPilotDatabase() {
   const priya = userMap.get('citizen.priya@demo.jaago.app')!;
   const ramesh = userMap.get('officer.bellandur@demo.jaago.app')!;
   const sunita = userMap.get('officer.hsr@demo.jaago.app')!;
+  const admin = userMap.get('admin@demo.jaago.app')!;
   const voter1 = userMap.get('voter1@demo.jaago.app')!;
   const voter2 = userMap.get('voter2@demo.jaago.app')!;
   const voter3 = userMap.get('voter3@demo.jaago.app')!;
 
   console.log('Seeding Initial Pilot Complaints...');
+  const photos = loadSeedPhotos();
+  const getPhoto = (idx: number, fallback: string) => photos[idx] || fallback;
+
+  const bwssb = agencyMap.get('BWSSB')!;
+  const bescom = agencyMap.get('BESCOM')!;
+
   const complaintsToCreate = [
     {
       title: 'Large Pothole near Green Glen Layout junction',
@@ -229,9 +253,10 @@ export async function seedPilotDatabase() {
       address: 'Outer Ring Rd, Bellandur, Bengaluru, Karnataka 560103',
       wardId: bellandurWard._id,
       agencyId: bbmpRoads._id,
-      imageUrl: 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/pothole.jpg',
+      imageUrl: getPhoto(0, 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/pothole.jpg'),
       status: 'Pending' as const,
       reportedBy: rahul._id,
+      createdAt: new Date(Date.now() - 36 * 3600 * 1000),
       upvotesCount: 3, // 3 matching votes: rahul, voter1, voter2
       reopenCount: 0,
       priorityScore: 14.5,
@@ -256,9 +281,10 @@ export async function seedPilotDatabase() {
       address: '27th Main Rd, Sector 1, HSR Layout, Bengaluru, Karnataka 560102',
       wardId: hsrWard._id,
       agencyId: bbmpSwm._id,
-      imageUrl: 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/garbage.jpg',
+      imageUrl: getPhoto(2, 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/garbage.jpg'),
       status: 'In Progress' as const,
       reportedBy: priya._id,
+      createdAt: new Date(Date.now() - 48 * 3600 * 1000),
       upvotesCount: 4, // 4 matching votes: priya, voter1, voter2, voter3
       reopenCount: 0,
       priorityScore: 16.0,
@@ -289,11 +315,12 @@ export async function seedPilotDatabase() {
       },
       address: '80 Feet Rd, 4th Block, Koramangala, Bengaluru, Karnataka 560034',
       wardId: koramangalaWard._id,
-      agencyId: agencyMap.get('BWSSB')!._id,
-      imageUrl: 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/drain.jpg',
-      resolutionImageUrl: 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/drain_resolved.jpg',
+      agencyId: bwssb._id,
+      imageUrl: getPhoto(4, 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/drain.jpg'),
+      resolutionImageUrl: getPhoto(5, 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/drain_resolved.jpg'),
       status: 'Pending Verification' as const,
       reportedBy: rahul._id,
+      createdAt: new Date(Date.now() - 72 * 3600 * 1000),
       upvotesCount: 3, // 3 matching votes: rahul, voter2, voter3
       reopenCount: 0,
       priorityScore: 18.0,
@@ -319,7 +346,7 @@ export async function seedPilotDatabase() {
           role: 'officer' as const,
           timestamp: new Date(Date.now() - 36 * 3600 * 1000),
           remarks: 'New RCC reinforced slab placed and cemented. Photo uploaded.',
-          imageUrl: 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/drain_resolved.jpg',
+          imageUrl: getPhoto(5, 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/drain_resolved.jpg'),
           locationAccuracy: 8,
           resolutionDistanceMeters: 12,
         },
@@ -335,11 +362,12 @@ export async function seedPilotDatabase() {
       },
       address: 'Haralur Main Rd, Bellandur, Bengaluru, Karnataka 560103',
       wardId: bellandurWard._id,
-      agencyId: agencyMap.get('BESCOM')!._id,
-      imageUrl: 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/light.jpg',
-      resolutionImageUrl: 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/light_resolved.jpg',
+      agencyId: bescom._id,
+      imageUrl: getPhoto(6, 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/light.jpg'),
+      resolutionImageUrl: getPhoto(7, 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/light_resolved.jpg'),
       status: 'Resolved - Citizen Verified' as const,
       reportedBy: priya._id,
+      createdAt: new Date(Date.now() - 140 * 3600 * 1000),
       upvotesCount: 2, // 2 matching votes: priya, rahul
       reopenCount: 0,
       priorityScore: 10.0,
@@ -364,7 +392,7 @@ export async function seedPilotDatabase() {
           role: 'officer' as const,
           timestamp: new Date(Date.now() - 80 * 3600 * 1000),
           remarks: 'All 12 luminaires lit and verified.',
-          imageUrl: 'https://images.unsplash.com/photo-1517457373958-b7bdd4587205?w=800&fit=crop',
+          imageUrl: getPhoto(7, 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/light_resolved.jpg'),
           locationAccuracy: 10,
           resolutionDistanceMeters: 14,
         },
@@ -374,6 +402,580 @@ export async function seedPilotDatabase() {
           role: 'citizen' as const,
           timestamp: new Date(Date.now() - 50 * 3600 * 1000),
           remarks: 'Inspected yesterday night. Excellent job, all lights working!',
+        },
+      ],
+    },
+    // Complaint 4: Bellandur Roads (In Progress)
+    {
+      title: 'Sunken Asphalt Patch outside Central Mall',
+      description: 'Uneven road settlement after cable laying work on Outer Ring Road causing severe traffic slowdown.',
+      category: 'Roads' as const,
+      location: {
+        type: 'Point' as const,
+        coordinates: [77.6830, 12.9315],
+      },
+      address: 'Outer Ring Rd, Devarabisanahalli, Bellandur, Bengaluru 560103',
+      wardId: bellandurWard._id,
+      agencyId: bbmpRoads._id,
+      imageUrl: getPhoto(8, 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/water_leak_sarjapur_junction.jpg'),
+      status: 'In Progress' as const,
+      reportedBy: rahul._id,
+      createdAt: new Date(Date.now() - 30 * 3600 * 1000),
+      upvotesCount: 2,
+      reopenCount: 0,
+      priorityScore: 11.0,
+      statusHistory: [
+        {
+          status: 'Pending' as const,
+          actorId: rahul._id,
+          role: 'citizen' as const,
+          timestamp: new Date(Date.now() - 30 * 3600 * 1000),
+          remarks: 'Severe bump on service road.',
+        },
+        {
+          status: 'In Progress' as const,
+          actorId: ramesh._id,
+          role: 'officer' as const,
+          timestamp: new Date(Date.now() - 10 * 3600 * 1000),
+          remarks: 'Wet-mix and roller scheduled for tonight.',
+        },
+      ],
+    },
+    // Complaint 5: Bellandur Water & Drainage (Resolved - Citizen Verified)
+    {
+      title: 'Sewage Backflow on Kasavanahalli Main Road',
+      description: 'Manhole chamber overflowing near Play Arena sports center into pedestrian pathway.',
+      category: 'Water Supply & Drainage' as const,
+      location: {
+        type: 'Point' as const,
+        coordinates: [77.6740, 12.9245],
+      },
+      address: 'Kasavanahalli Main Rd, Bellandur, Bengaluru 560103',
+      wardId: bellandurWard._id,
+      agencyId: bwssb._id,
+      imageUrl: getPhoto(16, 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/sewage_overflow_kasavanahalli.jpg'),
+      resolutionImageUrl: getPhoto(17, 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/sewage_overflow_kasavanahalli_fixed.jpg'),
+      status: 'Resolved - Citizen Verified' as const,
+      reportedBy: priya._id,
+      createdAt: new Date(Date.now() - 120 * 3600 * 1000),
+      upvotesCount: 3,
+      reopenCount: 0,
+      priorityScore: 15.0,
+      statusHistory: [
+        {
+          status: 'Pending' as const,
+          actorId: priya._id,
+          role: 'citizen' as const,
+          timestamp: new Date(Date.now() - 120 * 3600 * 1000),
+          remarks: 'Overflowing drain spreading into shops.',
+        },
+        {
+          status: 'In Progress' as const,
+          actorId: ramesh._id,
+          role: 'officer' as const,
+          timestamp: new Date(Date.now() - 90 * 3600 * 1000),
+          remarks: 'Suction jetting tanker deployed.',
+        },
+        {
+          status: 'Pending Verification' as const,
+          actorId: ramesh._id,
+          role: 'officer' as const,
+          timestamp: new Date(Date.now() - 60 * 3600 * 1000),
+          remarks: 'Clog cleared with high-pressure water jet. Chamber lid reset.',
+          imageUrl: getPhoto(17, 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/sewage_overflow_kasavanahalli_fixed.jpg'),
+          locationAccuracy: 12,
+          resolutionDistanceMeters: 15,
+        },
+        {
+          status: 'Resolved - Citizen Verified' as const,
+          actorId: priya._id,
+          role: 'citizen' as const,
+          timestamp: new Date(Date.now() - 20 * 3600 * 1000),
+          remarks: 'Water is flowing freely now. Thank you team.',
+        },
+      ],
+    },
+    // Complaint 6: Bellandur Sanitation (Resolved - Auto Closed)
+    {
+      title: 'Construction Debris Dumping along Lake Bund Road',
+      description: 'Unauthorised nocturnal dumping of concrete rubble narrowing the access road to Bellandur lake.',
+      category: 'Sanitation' as const,
+      location: {
+        type: 'Point' as const,
+        coordinates: [77.6650, 12.9380],
+      },
+      address: 'Bellandur Lake Bund Rd, Yemlur, Bengaluru 560103',
+      wardId: bellandurWard._id,
+      agencyId: bbmpSwm._id,
+      imageUrl: getPhoto(26, 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/illegal_dumping_bellandur_lake_bund.jpg'),
+      resolutionImageUrl: getPhoto(27, 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/illegal_dumping_lake_bund_cleaned.jpg'),
+      status: 'Resolved - Auto Closed' as const,
+      reportedBy: rahul._id,
+      createdAt: new Date(Date.now() - 200 * 3600 * 1000),
+      upvotesCount: 1,
+      reopenCount: 0,
+      priorityScore: 8.5,
+      statusHistory: [
+        {
+          status: 'Pending' as const,
+          actorId: rahul._id,
+          role: 'citizen' as const,
+          timestamp: new Date(Date.now() - 200 * 3600 * 1000),
+          remarks: 'Heavy concrete rubble blocking half the road.',
+        },
+        {
+          status: 'In Progress' as const,
+          actorId: ramesh._id,
+          role: 'officer' as const,
+          timestamp: new Date(Date.now() - 170 * 3600 * 1000),
+          remarks: 'Tipper truck and JCB allocated.',
+        },
+        {
+          status: 'Pending Verification' as const,
+          actorId: ramesh._id,
+          role: 'officer' as const,
+          timestamp: new Date(Date.now() - 140 * 3600 * 1000),
+          remarks: 'All debris removed and disposed at quarry site.',
+          imageUrl: getPhoto(27, 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/illegal_dumping_lake_bund_cleaned.jpg'),
+          locationAccuracy: 9,
+          resolutionDistanceMeters: 10,
+        },
+        {
+          status: 'Resolved - Auto Closed' as const,
+          actorId: admin._id,
+          role: 'system' as const,
+          timestamp: new Date(Date.now() - 10 * 3600 * 1000),
+          remarks: 'Automatically closed after 120-hour citizen verification window elapsed.',
+        },
+      ],
+    },
+    // Complaint 7: Bellandur Roads (Pending)
+    {
+      title: 'Unpaved Utility Trench outside EcoSpace Tech Park',
+      description: 'Open gravel trench left unpaved for 2 weeks after pipeline installation.',
+      category: 'Roads' as const,
+      location: {
+        type: 'Point' as const,
+        coordinates: [77.6880, 12.9340],
+      },
+      address: 'Bellandur Outer Ring Rd, near EcoSpace, Bengaluru 560103',
+      wardId: bellandurWard._id,
+      agencyId: bbmpRoads._id,
+      imageUrl: getPhoto(20, 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/unpaved_trench_bellandur_gate.jpg'),
+      status: 'Pending' as const,
+      reportedBy: priya._id,
+      createdAt: new Date(Date.now() - 18 * 3600 * 1000),
+      upvotesCount: 2,
+      reopenCount: 0,
+      priorityScore: 9.5,
+      statusHistory: [
+        {
+          status: 'Pending' as const,
+          actorId: priya._id,
+          role: 'citizen' as const,
+          timestamp: new Date(Date.now() - 18 * 3600 * 1000),
+          remarks: 'Trench left without caution tape.',
+        },
+      ],
+    },
+    // Complaint 8: HSR Layout Water & Drainage (Resolved - Citizen Verified)
+    {
+      title: 'Water Pipe Leakage at 14th Main Junction',
+      description: 'Underground BWSSB mainline ruptured, clean water flooding the street curb.',
+      category: 'Water Supply & Drainage' as const,
+      location: {
+        type: 'Point' as const,
+        coordinates: [77.6385, 12.9090],
+      },
+      address: '14th Main Rd, Sector 4, HSR Layout, Bengaluru 560102',
+      wardId: hsrWard._id,
+      agencyId: bwssb._id,
+      imageUrl: getPhoto(8, 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/water_leak_sarjapur_junction.jpg'),
+      resolutionImageUrl: getPhoto(9, 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/water_leak_sarjapur_repaired.jpg'),
+      status: 'Resolved - Citizen Verified' as const,
+      reportedBy: voter1._id,
+      createdAt: new Date(Date.now() - 96 * 3600 * 1000),
+      upvotesCount: 3,
+      reopenCount: 0,
+      priorityScore: 13.0,
+      statusHistory: [
+        {
+          status: 'Pending' as const,
+          actorId: rahul._id,
+          role: 'citizen' as const,
+          timestamp: new Date(Date.now() - 96 * 3600 * 1000),
+          remarks: 'Huge water loss on road.',
+        },
+        {
+          status: 'In Progress' as const,
+          actorId: sunita._id,
+          role: 'officer' as const,
+          timestamp: new Date(Date.now() - 72 * 3600 * 1000),
+          remarks: 'Pipe clamp welding team on site.',
+        },
+        {
+          status: 'Pending Verification' as const,
+          actorId: sunita._id,
+          role: 'officer' as const,
+          timestamp: new Date(Date.now() - 48 * 3600 * 1000),
+          remarks: 'Cast iron pipe section replaced and pressure tested.',
+          imageUrl: getPhoto(9, 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/water_leak_sarjapur_repaired.jpg'),
+          locationAccuracy: 7,
+          resolutionDistanceMeters: 9,
+        },
+        {
+          status: 'Resolved - Citizen Verified' as const,
+          actorId: rahul._id,
+          role: 'citizen' as const,
+          timestamp: new Date(Date.now() - 24 * 3600 * 1000),
+          remarks: 'Road is dry, water supply restored to houses.',
+        },
+      ],
+    },
+    // Complaint 9: HSR Layout Streetlights (Resolved - Citizen Verified)
+    {
+      title: 'Exposed Live Wiring on Feeder Pillar',
+      description: 'Open electrical distribution box next to Agara Lake children park.',
+      category: 'Streetlights' as const,
+      location: {
+        type: 'Point' as const,
+        coordinates: [77.6490, 12.9180],
+      },
+      address: 'Agara Lake Rd, Sector 1, HSR Layout, Bengaluru 560102',
+      wardId: hsrWard._id,
+      agencyId: bescom._id,
+      imageUrl: getPhoto(14, 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/open_transformer_hsr_sector2.jpg'),
+      resolutionImageUrl: getPhoto(15, 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/open_transformer_hsr_fenced.jpg'),
+      status: 'Resolved - Citizen Verified' as const,
+      reportedBy: priya._id,
+      createdAt: new Date(Date.now() - 110 * 3600 * 1000),
+      upvotesCount: 4,
+      reopenCount: 0,
+      priorityScore: 17.5,
+      statusHistory: [
+        {
+          status: 'Pending' as const,
+          actorId: priya._id,
+          role: 'citizen' as const,
+          timestamp: new Date(Date.now() - 110 * 3600 * 1000),
+          remarks: 'Critical hazard next to playground.',
+        },
+        {
+          status: 'In Progress' as const,
+          actorId: sunita._id,
+          role: 'officer' as const,
+          timestamp: new Date(Date.now() - 85 * 3600 * 1000),
+          remarks: 'Line technician barricaded zone.',
+        },
+        {
+          status: 'Pending Verification' as const,
+          actorId: sunita._id,
+          role: 'officer' as const,
+          timestamp: new Date(Date.now() - 50 * 3600 * 1000),
+          remarks: 'Door replaced with lock and mesh cage installed.',
+          imageUrl: getPhoto(15, 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/open_transformer_hsr_fenced.jpg'),
+          locationAccuracy: 11,
+          resolutionDistanceMeters: 13,
+        },
+        {
+          status: 'Resolved - Citizen Verified' as const,
+          actorId: priya._id,
+          role: 'citizen' as const,
+          timestamp: new Date(Date.now() - 15 * 3600 * 1000),
+          remarks: 'Box safely locked. Thank you!',
+        },
+      ],
+    },
+    // Complaint 10: HSR Layout Sanitation (Pending Verification)
+    {
+      title: 'Overflowing Commercial Dumper Bin along 19th Main',
+      description: 'Restaurant wet waste spilling onto road with cattle gathering.',
+      category: 'Sanitation' as const,
+      location: {
+        type: 'Point' as const,
+        coordinates: [77.6410, 12.9050],
+      },
+      address: '19th Main Rd, Sector 2, HSR Layout, Bengaluru 560102',
+      wardId: hsrWard._id,
+      agencyId: bbmpSwm._id,
+      imageUrl: getPhoto(10, 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/debris_hsr_19th_main.jpg'),
+      resolutionImageUrl: getPhoto(11, 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/debris_hsr_19th_cleared.jpg'),
+      status: 'Pending Verification' as const,
+      reportedBy: voter2._id,
+      createdAt: new Date(Date.now() - 40 * 3600 * 1000),
+      upvotesCount: 2,
+      reopenCount: 0,
+      priorityScore: 12.0,
+      verificationDeadline: new Date(Date.now() + 70 * 3600 * 1000),
+      statusHistory: [
+        {
+          status: 'Pending' as const,
+          actorId: rahul._id,
+          role: 'citizen' as const,
+          timestamp: new Date(Date.now() - 40 * 3600 * 1000),
+          remarks: 'Spillover blocking sidewalk.',
+        },
+        {
+          status: 'In Progress' as const,
+          actorId: sunita._id,
+          role: 'officer' as const,
+          timestamp: new Date(Date.now() - 20 * 3600 * 1000),
+          remarks: 'Compactor vehicle en route.',
+        },
+        {
+          status: 'Pending Verification' as const,
+          actorId: sunita._id,
+          role: 'officer' as const,
+          timestamp: new Date(Date.now() - 6 * 3600 * 1000),
+          remarks: 'Bin emptied, bleached, and area sanitized.',
+          imageUrl: getPhoto(11, 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/debris_hsr_19th_cleared.jpg'),
+          locationAccuracy: 10,
+          resolutionDistanceMeters: 14,
+        },
+      ],
+    },
+    // Complaint 11: HSR Layout Water & Drainage (Reopened)
+    {
+      title: 'Blocked Stormwater Culvert on 5th Main',
+      description: 'Inundation during light showers due to mud accumulation in roadside culvert.',
+      category: 'Water Supply & Drainage' as const,
+      location: {
+        type: 'Point' as const,
+        coordinates: [77.6350, 12.9140],
+      },
+      address: '5th Main Rd, Sector 7, HSR Layout, Bengaluru 560102',
+      wardId: hsrWard._id,
+      agencyId: bwssb._id,
+      imageUrl: getPhoto(22, 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/clogged_grate_hsr_sector7.jpg'),
+      resolutionImageUrl: getPhoto(23, 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/clogged_grate_hsr_desilted.jpg'),
+      status: 'Reopened - Escalated' as const,
+      reportedBy: priya._id,
+      createdAt: new Date(Date.now() - 72 * 3600 * 1000),
+      upvotesCount: 3,
+      reopenCount: 1,
+      priorityScore: 16.5,
+      statusHistory: [
+        {
+          status: 'Pending' as const,
+          actorId: priya._id,
+          role: 'citizen' as const,
+          timestamp: new Date(Date.now() - 72 * 3600 * 1000),
+          remarks: 'Water pooling up to doorstep.',
+        },
+        {
+          status: 'In Progress' as const,
+          actorId: sunita._id,
+          role: 'officer' as const,
+          timestamp: new Date(Date.now() - 48 * 3600 * 1000),
+          remarks: 'Manual desilting crew assigned.',
+        },
+        {
+          status: 'Pending Verification' as const,
+          actorId: sunita._id,
+          role: 'officer' as const,
+          timestamp: new Date(Date.now() - 30 * 3600 * 1000),
+          remarks: 'Culvert opened and silt removed.',
+          imageUrl: getPhoto(23, 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/clogged_grate_hsr_desilted.jpg'),
+          locationAccuracy: 8,
+          resolutionDistanceMeters: 11,
+        },
+        {
+          status: 'Reopened - Escalated' as const,
+          actorId: priya._id,
+          role: 'citizen' as const,
+          timestamp: new Date(Date.now() - 10 * 3600 * 1000),
+          remarks: 'The desilted mud was dumped directly on the curb and got washed right back in with yesterday evening rain!',
+        },
+      ],
+    },
+    // Complaint 12: Koramangala Roads (Resolved - Citizen Verified)
+    {
+      title: 'Cracked Pedestrian Walkway opposite Jyoti Nivas College',
+      description: 'Multiple pavers dislodged creating tripping hazard for students and senior citizens.',
+      category: 'Roads' as const,
+      location: {
+        type: 'Point' as const,
+        coordinates: [77.6210, 12.9320],
+      },
+      address: 'Hosur Rd, 5th Block, Koramangala, Bengaluru 560095',
+      wardId: koramangalaWard._id,
+      agencyId: bbmpRoads._id,
+      imageUrl: getPhoto(12, 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/caved_footpath_kora_jnc.jpg'),
+      resolutionImageUrl: getPhoto(13, 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/caved_footpath_kora_rebuilt.jpg'),
+      status: 'Resolved - Citizen Verified' as const,
+      reportedBy: voter3._id,
+      createdAt: new Date(Date.now() - 90 * 3600 * 1000),
+      upvotesCount: 2,
+      reopenCount: 0,
+      priorityScore: 10.5,
+      statusHistory: [
+        {
+          status: 'Pending' as const,
+          actorId: rahul._id,
+          role: 'citizen' as const,
+          timestamp: new Date(Date.now() - 90 * 3600 * 1000),
+          remarks: 'Footpath broken in multiple places.',
+        },
+        {
+          status: 'In Progress' as const,
+          actorId: ramesh._id,
+          role: 'officer' as const,
+          timestamp: new Date(Date.now() - 60 * 3600 * 1000),
+          remarks: 'Interlocking paver blocks ordered.',
+        },
+        {
+          status: 'Pending Verification' as const,
+          actorId: ramesh._id,
+          role: 'officer' as const,
+          timestamp: new Date(Date.now() - 36 * 3600 * 1000),
+          remarks: 'Entire 20m stretch relaid with interlocking tiles.',
+          imageUrl: getPhoto(13, 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/caved_footpath_kora_rebuilt.jpg'),
+          locationAccuracy: 9,
+          resolutionDistanceMeters: 8,
+        },
+        {
+          status: 'Resolved - Citizen Verified' as const,
+          actorId: rahul._id,
+          role: 'citizen' as const,
+          timestamp: new Date(Date.now() - 12 * 3600 * 1000),
+          remarks: 'Clean pavement, very safe now.',
+        },
+      ],
+    },
+    // Complaint 13: Koramangala Sanitation (Resolved - Citizen Verified)
+    {
+      title: 'Fallen Tree Branches Obstructing 3rd Block Lane',
+      description: 'Heavy eucalyptus branch snapped following squall, blocking vehicular passage.',
+      category: 'Sanitation' as const,
+      location: {
+        type: 'Point' as const,
+        coordinates: [77.6290, 12.9370],
+      },
+      address: '12th Main Rd, 3rd Block, Koramangala, Bengaluru 560034',
+      wardId: koramangalaWard._id,
+      agencyId: bbmpSwm._id,
+      imageUrl: getPhoto(18, 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/fallen_tree_branch_kora_3rd_block.jpg'),
+      resolutionImageUrl: getPhoto(19, 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/fallen_tree_branch_cleared.jpg'),
+      status: 'Resolved - Citizen Verified' as const,
+      reportedBy: priya._id,
+      createdAt: new Date(Date.now() - 60 * 3600 * 1000),
+      upvotesCount: 3,
+      reopenCount: 0,
+      priorityScore: 14.0,
+      statusHistory: [
+        {
+          status: 'Pending' as const,
+          actorId: priya._id,
+          role: 'citizen' as const,
+          timestamp: new Date(Date.now() - 60 * 3600 * 1000),
+          remarks: 'Branch blocking ambulance access.',
+        },
+        {
+          status: 'In Progress' as const,
+          actorId: ramesh._id,
+          role: 'officer' as const,
+          timestamp: new Date(Date.now() - 40 * 3600 * 1000),
+          remarks: 'Forest wing team arrived with chainsaw.',
+        },
+        {
+          status: 'Pending Verification' as const,
+          actorId: ramesh._id,
+          role: 'officer' as const,
+          timestamp: new Date(Date.now() - 25 * 3600 * 1000),
+          remarks: 'Logs cut and shifted. Street cleared and swept.',
+          imageUrl: getPhoto(19, 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/fallen_tree_branch_cleared.jpg'),
+          locationAccuracy: 10,
+          resolutionDistanceMeters: 12,
+        },
+        {
+          status: 'Resolved - Citizen Verified' as const,
+          actorId: priya._id,
+          role: 'citizen' as const,
+          timestamp: new Date(Date.now() - 8 * 3600 * 1000),
+          remarks: 'Prompt action, road fully clear.',
+        },
+      ],
+    },
+    // Complaint 14: Koramangala Streetlights (Pending)
+    {
+      title: 'Damaged Octagonal Streetlight Pole near St. Johns Signal',
+      description: 'Pole tilted precariously at 20 degrees after vehicular collision.',
+      category: 'Streetlights' as const,
+      location: {
+        type: 'Point' as const,
+        coordinates: [77.6180, 12.9290],
+      },
+      address: 'Sarjapur Main Rd, 1st Block, Koramangala, Bengaluru 560034',
+      wardId: koramangalaWard._id,
+      agencyId: bescom._id,
+      imageUrl: getPhoto(24, 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/broken_pole_kora_st_johns.jpg'),
+      status: 'Pending' as const,
+      reportedBy: voter1._id,
+      createdAt: new Date(Date.now() - 14 * 3600 * 1000),
+      upvotesCount: 1,
+      reopenCount: 0,
+      priorityScore: 8.0,
+      statusHistory: [
+        {
+          status: 'Pending' as const,
+          actorId: rahul._id,
+          role: 'citizen' as const,
+          timestamp: new Date(Date.now() - 14 * 3600 * 1000),
+          remarks: 'Pole could fall in high wind.',
+        },
+      ],
+    },
+    // Complaint 15: Koramangala Water & Drainage (Disputed - Admin Review)
+    {
+      title: 'Potable Water Pipeline Burst on 80 Feet Road',
+      description: 'High-pressure water jet eroding foundation of nearby commercial buildings.',
+      category: 'Water Supply & Drainage' as const,
+      location: {
+        type: 'Point' as const,
+        coordinates: [77.6320, 12.9410],
+      },
+      address: '80 Feet Rd, 6th Block, Koramangala, Bengaluru 560095',
+      wardId: koramangalaWard._id,
+      agencyId: bwssb._id,
+      imageUrl: getPhoto(30, 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/water_pipeline_burst_kora_5th_block.jpg'),
+      resolutionImageUrl: getPhoto(31, 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/water_pipeline_burst_repaired.jpg'),
+      status: 'Disputed - Admin Review' as const,
+      reportedBy: priya._id,
+      createdAt: new Date(Date.now() - 80 * 3600 * 1000),
+      upvotesCount: 4,
+      reopenCount: 1,
+      priorityScore: 19.0,
+      statusHistory: [
+        {
+          status: 'Pending' as const,
+          actorId: priya._id,
+          role: 'citizen' as const,
+          timestamp: new Date(Date.now() - 80 * 3600 * 1000),
+          remarks: 'Heavy flooding from broken valve.',
+        },
+        {
+          status: 'In Progress' as const,
+          actorId: ramesh._id,
+          role: 'officer' as const,
+          timestamp: new Date(Date.now() - 50 * 3600 * 1000),
+          remarks: 'Emergency isolation valve turned off.',
+        },
+        {
+          status: 'Pending Verification' as const,
+          actorId: ramesh._id,
+          role: 'officer' as const,
+          timestamp: new Date(Date.now() - 30 * 3600 * 1000),
+          remarks: 'Valve gasket replaced and pipeline repressurized.',
+          imageUrl: getPhoto(31, 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/water_pipeline_burst_repaired.jpg'),
+          locationAccuracy: 11,
+          resolutionDistanceMeters: 13,
+        },
+        {
+          status: 'Disputed - Admin Review' as const,
+          actorId: priya._id,
+          role: 'citizen' as const,
+          timestamp: new Date(Date.now() - 8 * 3600 * 1000),
+          remarks: 'Leakage restarted within 2 hours. Pressure gauge was not calibrated.',
         },
       ],
     },
@@ -400,6 +1002,48 @@ export async function seedPilotDatabase() {
     // Complaint 3 (upvotes: 2)
     { complaintId: createdComplaints[3]._id, userId: priya._id },
     { complaintId: createdComplaints[3]._id, userId: rahul._id },
+    // Complaint 4 (upvotes: 2)
+    { complaintId: createdComplaints[4]._id, userId: rahul._id },
+    { complaintId: createdComplaints[4]._id, userId: voter1._id },
+    // Complaint 5 (upvotes: 3)
+    { complaintId: createdComplaints[5]._id, userId: priya._id },
+    { complaintId: createdComplaints[5]._id, userId: voter1._id },
+    { complaintId: createdComplaints[5]._id, userId: voter2._id },
+    // Complaint 6 (upvotes: 1)
+    { complaintId: createdComplaints[6]._id, userId: rahul._id },
+    // Complaint 7 (upvotes: 2)
+    { complaintId: createdComplaints[7]._id, userId: priya._id },
+    { complaintId: createdComplaints[7]._id, userId: voter2._id },
+    // Complaint 8 (upvotes: 3)
+    { complaintId: createdComplaints[8]._id, userId: rahul._id },
+    { complaintId: createdComplaints[8]._id, userId: voter1._id },
+    { complaintId: createdComplaints[8]._id, userId: voter3._id },
+    // Complaint 9 (upvotes: 4)
+    { complaintId: createdComplaints[9]._id, userId: priya._id },
+    { complaintId: createdComplaints[9]._id, userId: rahul._id },
+    { complaintId: createdComplaints[9]._id, userId: voter1._id },
+    { complaintId: createdComplaints[9]._id, userId: voter2._id },
+    // Complaint 10 (upvotes: 2)
+    { complaintId: createdComplaints[10]._id, userId: rahul._id },
+    { complaintId: createdComplaints[10]._id, userId: voter2._id },
+    // Complaint 11 (upvotes: 3)
+    { complaintId: createdComplaints[11]._id, userId: priya._id },
+    { complaintId: createdComplaints[11]._id, userId: voter1._id },
+    { complaintId: createdComplaints[11]._id, userId: voter3._id },
+    // Complaint 12 (upvotes: 2)
+    { complaintId: createdComplaints[12]._id, userId: rahul._id },
+    { complaintId: createdComplaints[12]._id, userId: priya._id },
+    // Complaint 13 (upvotes: 3)
+    { complaintId: createdComplaints[13]._id, userId: priya._id },
+    { complaintId: createdComplaints[13]._id, userId: voter2._id },
+    { complaintId: createdComplaints[13]._id, userId: voter3._id },
+    // Complaint 14 (upvotes: 1)
+    { complaintId: createdComplaints[14]._id, userId: rahul._id },
+    // Complaint 15 (upvotes: 4)
+    { complaintId: createdComplaints[15]._id, userId: priya._id },
+    { complaintId: createdComplaints[15]._id, userId: rahul._id },
+    { complaintId: createdComplaints[15]._id, userId: voter1._id },
+    { complaintId: createdComplaints[15]._id, userId: voter2._id },
   ];
   await Vote.insertMany(votes);
   console.log(`Created ${votes.length} matching Vote records.`);

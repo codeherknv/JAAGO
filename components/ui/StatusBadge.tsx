@@ -60,15 +60,15 @@ export function StatusBadge({ status, className = '', size = 'md' }: StatusBadge
       break;
 
     case 'Reopened - Escalated':
-      icon = <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-alert-red" />;
+      icon = <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-purple-700" />;
       label = t.reopenedEscalated;
-      styleClasses = 'bg-alert-light text-alert-red border-alert-red/40 font-semibold';
+      styleClasses = 'bg-purple-50 text-purple-800 border-purple-300 font-semibold';
       break;
 
     case 'Disputed - Admin Review':
-      icon = <Scale className="w-3.5 h-3.5 shrink-0 text-alert-red" />;
+      icon = <Scale className="w-3.5 h-3.5 shrink-0 text-purple-700" />;
       label = t.disputedAdminReview;
-      styleClasses = 'bg-alert-light text-alert-red border-alert-red/50 font-bold';
+      styleClasses = 'bg-purple-100 text-purple-900 border-purple-400 font-bold';
       break;
 
     case 'Rejected - Invalid':

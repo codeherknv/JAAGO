@@ -132,6 +132,16 @@ export default function OfficerDashboardPage() {
     }
   };
 
+  // Clean up media tracks on unmount
+  useEffect(() => {
+    return () => {
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+        mediaStreamRef.current = null;
+      }
+    };
+  }, []);
+
   // Start Camera Stream
   const startCamera = async () => {
     setCameraError(null);
@@ -147,7 +157,9 @@ export default function OfficerDashboardPage() {
       }
       setIsCameraActive(true);
     } catch (err: any) {
-      setCameraError('Camera access unavailable. Use file upload fallback.');
+      setCameraError(
+        'Camera permission was denied or unavailable. Please use the button below to upload a photo from your device.'
+      );
       setIsCameraActive(false);
     }
   };
@@ -304,6 +316,35 @@ export default function OfficerDashboardPage() {
     return `${days}d open`;
   };
 
+  const getPriorityExplanation = (c: any) => {
+    const parts: string[] = [];
+    const supporters = c.upvotesCount || 1;
+    const reopens = c.reopenCount || 0;
+    const hours = Math.round((Date.now() - new Date(c.createdAt).getTime()) / (3600 * 1000));
+    const days = Math.floor(hours / 24);
+
+    if (supporters > 1) {
+      parts.push(`${supporters} supporters`);
+    }
+    if (days >= 1) {
+      parts.push(`open ${days}d`);
+    } else if (hours >= 1) {
+      parts.push(`open ${hours}h`);
+    }
+    if (c.category) {
+      parts.push(`${c.category} SLA`);
+    }
+    if (reopens > 0) {
+      parts.push(`contested ${reopens}x`);
+    }
+
+    if (parts.length === 0) {
+      return 'Standard priority';
+    }
+
+    return `High priority: ${parts.join(', ')}`;
+  };
+
   return (
     <div className="w-full bg-kerb min-h-[calc(100vh-64px)] pb-20 md:pb-8">
       {/* Top Header Plate */}
@@ -381,8 +422,11 @@ export default function OfficerDashboardPage() {
                             <span className="px-1.5 py-0.5 rounded-plate bg-kerb text-[11px] font-heading font-semibold text-asphalt border border-border">
                               {c.category}
                             </span>
-                            <span className="text-[11px] font-mono font-bold text-signboard-blue bg-signboard-blue/10 px-1.5 py-0.5 rounded-plate">
-                              P: {c.priorityScore ? c.priorityScore.toFixed(1) : '10.0'}
+                            <span
+                              title={`Priority score: ${c.priorityScore ? c.priorityScore.toFixed(1) : '10.0'}`}
+                              className="text-[11px] font-sans font-medium text-signboard-blue bg-signboard-blue/10 px-2 py-0.5 rounded-plate border border-signboard-blue/20 cursor-help"
+                            >
+                              {getPriorityExplanation(c)}
                             </span>
                             <span className="text-[11px] text-asphalt-muted">
                               {getDaysOpen(c.createdAt)}
@@ -556,7 +600,7 @@ export default function OfficerDashboardPage() {
                     fill
                     sizes="400px"
                     className="object-cover"
-                    unoptimized
+                    unoptimized={resolutionPreview.startsWith('data:') || resolutionPreview.startsWith('blob:')}
                   />
                   <button
                     type="button"

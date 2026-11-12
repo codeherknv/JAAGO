@@ -1,0 +1,140 @@
+'use client';
+
+import React, { useEffect, useRef } from 'react';
+import { X } from 'lucide-react';
+
+export interface ModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  title?: string;
+  children: React.ReactNode;
+  maxWidth?: string;
+}
+
+export function Modal({
+  isOpen,
+  onClose,
+  title,
+  children,
+  maxWidth = 'max-w-md',
+}: ModalProps) {
+  const modalRef = useRef<HTMLDivElement>(null);
+  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    // Capture currently focused element before opening dialog
+    previouslyFocusedRef.current = document.activeElement as HTMLElement;
+    document.body.style.overflow = 'hidden';
+
+    // Move initial focus into the dialog
+    const timer = setTimeout(() => {
+      if (modalRef.current) {
+        const focusable = Array.from(
+          modalRef.current.querySelectorAll<HTMLElement>(
+            'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+          )
+        ).filter((el) => el.offsetParent !== null);
+
+        if (focusable.length > 0) {
+          focusable[0].focus();
+        } else {
+          modalRef.current.focus();
+        }
+      }
+    }, 50);
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // 1. Close on Escape
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+        return;
+      }
+
+      // 2. Trap Tab Focus inside dialog
+      if (e.key === 'Tab' && modalRef.current) {
+        const focusable = Array.from(
+          modalRef.current.querySelectorAll<HTMLElement>(
+            'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+          )
+        ).filter((el) => el.offsetParent !== null);
+
+        if (focusable.length === 0) return;
+
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+
+        if (e.shiftKey) {
+          if (document.activeElement === first) {
+            e.preventDefault();
+            last.focus();
+          }
+        } else {
+          if (document.activeElement === last) {
+            e.preventDefault();
+            first.focus();
+          }
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+
+    // 3. Return focus to trigger element on close / unmount
+    return () => {
+      clearTimeout(timer);
+      document.body.style.overflow = '';
+      window.removeEventListener('keydown', handleKeyDown);
+      if (
+        previouslyFocusedRef.current &&
+        typeof previouslyFocusedRef.current.focus === 'function'
+      ) {
+        previouslyFocusedRef.current.focus();
+      }
+    };
+  }, [isOpen, onClose]);
+
+  if (!isOpen) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-asphalt/50 backdrop-blur-sm"
+      role="presentation"
+    >
+      {/* Backdrop */}
+      <div
+        className="fixed inset-0"
+        onClick={onClose}
+        aria-hidden="true"
+      />
+
+      {/* Modal Dialog Content */}
+      <div
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={title ? 'modal-dialog-title' : undefined}
+        tabIndex={-1}
+        className={`relative z-10 w-full ${maxWidth} bg-white rounded-control border border-border shadow-sheet p-6 space-y-4 focus:outline-none`}
+      >
+        {title && (
+          <div className="flex items-center justify-between pb-2 border-b border-border">
+            <h3 id="modal-dialog-title" className="font-heading font-bold text-base text-asphalt">
+              {title}
+            </h3>
+            <button
+              onClick={onClose}
+              className="p-1 -mr-1 rounded-plate text-asphalt-muted hover:text-asphalt hover:bg-kerb transition"
+              aria-label="Close dialog"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+        <div>{children}</div>
+      </div>
+    </div>
+  );
+}

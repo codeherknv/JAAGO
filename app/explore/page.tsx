@@ -192,6 +192,10 @@ export default function ExplorePage() {
                 <span className="w-3 h-3 rounded-plate bg-fixed-green border border-white shrink-0" />
                 <span className="text-asphalt">Resolved</span>
               </div>
+              <div className="flex items-center gap-1.5 col-span-2 pt-1 border-t border-border-subtle">
+                <span className="w-3 h-3 rounded-plate bg-[#7C3AED] border border-white shadow-[0_0_0_1px_#7C3AED] shrink-0" />
+                <span className="text-asphalt font-semibold">Reopened / Disputed</span>
+              </div>
             </div>
           </div>
         )}

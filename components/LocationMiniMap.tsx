@@ -32,6 +32,12 @@ const LeafletMap = dynamic(
       iconAnchor: [14, 14],
     });
 
+    const DEFAULT_TILE_URL =
+      process.env.NEXT_PUBLIC_TILE_URL || 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+    const DEFAULT_TILE_ATTRIBUTION =
+      process.env.NEXT_PUBLIC_TILE_ATTRIBUTION ||
+      '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OSM</a>';
+
     return function InnerMap({ lat, lng, accuracy }: LocationMiniMapProps) {
       return (
         <MapContainer
@@ -40,10 +46,13 @@ const LeafletMap = dynamic(
           scrollWheelZoom={false}
           dragging={false}
           zoomControl={false}
-          attributionControl={false}
+          attributionControl={true}
           className="w-full h-full rounded-control"
         >
-          <TileLayer url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png" />
+          <TileLayer
+            url={DEFAULT_TILE_URL}
+            attribution={DEFAULT_TILE_ATTRIBUTION}
+          />
           <Marker position={[lat, lng]} icon={customPin} />
           {accuracy && accuracy > 0 && (
             <Circle

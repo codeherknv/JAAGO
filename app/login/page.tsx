@@ -12,6 +12,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('password123');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const isDemoAuth = process.env.DEMO_AUTH === 'true' || process.env.NEXT_PUBLIC_DEMO_AUTH === 'true';
 
   const handleSignIn = async (userEmail: string, userPass = 'password123') => {
     setLoading(true);
@@ -60,85 +61,89 @@ export default function LoginPage() {
         )}
 
         {/* 1-Click Demo Profiles */}
-        <div className="space-y-2.5">
-          <span className="text-[11px] font-heading font-bold uppercase tracking-wider text-asphalt-muted block">
-            1-Click Demo Personas
-          </span>
+        {isDemoAuth && (
+          <>
+            <div className="space-y-2.5">
+              <span className="text-[11px] font-heading font-bold uppercase tracking-wider text-asphalt-muted block">
+                1-Click Demo Personas
+              </span>
 
-          {/* Officer Persona */}
-          <button
-            onClick={() => handleSignIn('officer.bellandur@demo.jaago.app')}
-            disabled={loading}
-            className="w-full flex items-center justify-between p-3 rounded-control border border-border bg-kerb hover:bg-border-subtle text-left transition"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-plate bg-asphalt text-marking-yellow flex items-center justify-center font-heading font-bold text-xs">
-                AEE
+              {/* Officer Persona */}
+              <button
+                onClick={() => handleSignIn('officer.bellandur@demo.jaago.app')}
+                disabled={loading}
+                className="w-full flex items-center justify-between p-3 rounded-control border border-border bg-kerb hover:bg-border-subtle text-left transition"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-plate bg-asphalt text-marking-yellow flex items-center justify-center font-heading font-bold text-xs">
+                    AEE
+                  </div>
+                  <div>
+                    <p className="text-xs font-heading font-bold text-asphalt">Ramesh Gowda</p>
+                    <p className="text-[11px] font-sans text-asphalt-muted">
+                      Ward Officer • Bellandur (W-150)
+                    </p>
+                  </div>
+                </div>
+                <span className="text-[10px] font-heading font-bold px-2 py-0.5 rounded-plate bg-signboard-blue/10 text-signboard-blue border border-signboard-blue/30">
+                  Officer
+                </span>
+              </button>
+
+              {/* Citizen Persona */}
+              <button
+                onClick={() => handleSignIn('citizen.rahul@demo.jaago.app')}
+                disabled={loading}
+                className="w-full flex items-center justify-between p-3 rounded-control border border-border bg-kerb hover:bg-border-subtle text-left transition"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-plate bg-asphalt text-white flex items-center justify-center">
+                    <User className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-heading font-bold text-asphalt">Rahul Sharma</p>
+                    <p className="text-[11px] font-sans text-asphalt-muted">Resident • Bellandur</p>
+                  </div>
+                </div>
+                <span className="text-[10px] font-heading font-bold px-2 py-0.5 rounded-plate bg-kerb text-asphalt border border-border">
+                  Citizen
+                </span>
+              </button>
+
+              {/* Admin Persona */}
+              <button
+                onClick={() => handleSignIn('admin@demo.jaago.app')}
+                disabled={loading}
+                className="w-full flex items-center justify-between p-3 rounded-control border border-border bg-kerb hover:bg-border-subtle text-left transition"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-plate bg-asphalt text-marking-yellow flex items-center justify-center">
+                    <Shield className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-heading font-bold text-asphalt">Municipal Admin</p>
+                    <p className="text-[11px] font-sans text-asphalt-muted">Control Center &amp; Triage</p>
+                  </div>
+                </div>
+                <span className="text-[10px] font-heading font-bold px-2 py-0.5 rounded-plate bg-asphalt text-marking-yellow">
+                  Admin
+                </span>
+              </button>
+            </div>
+
+            {/* Divider */}
+            <div className="relative my-3">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-border" />
               </div>
-              <div>
-                <p className="text-xs font-heading font-bold text-asphalt">Ramesh Gowda</p>
-                <p className="text-[11px] font-sans text-asphalt-muted">
-                  Ward Officer • Bellandur (W-150)
-                </p>
+              <div className="relative flex justify-center text-[11px] uppercase">
+                <span className="bg-white px-2 font-heading font-semibold text-asphalt-muted">
+                  Or sign in with email
+                </span>
               </div>
             </div>
-            <span className="text-[10px] font-heading font-bold px-2 py-0.5 rounded-plate bg-signboard-blue/10 text-signboard-blue border border-signboard-blue/30">
-              Officer
-            </span>
-          </button>
-
-          {/* Citizen Persona */}
-          <button
-            onClick={() => handleSignIn('citizen.rahul@demo.jaago.app')}
-            disabled={loading}
-            className="w-full flex items-center justify-between p-3 rounded-control border border-border bg-kerb hover:bg-border-subtle text-left transition"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-plate bg-asphalt text-white flex items-center justify-center">
-                <User className="w-4 h-4" />
-              </div>
-              <div>
-                <p className="text-xs font-heading font-bold text-asphalt">Rahul Sharma</p>
-                <p className="text-[11px] font-sans text-asphalt-muted">Resident • Bellandur</p>
-              </div>
-            </div>
-            <span className="text-[10px] font-heading font-bold px-2 py-0.5 rounded-plate bg-kerb text-asphalt border border-border">
-              Citizen
-            </span>
-          </button>
-
-          {/* Admin Persona */}
-          <button
-            onClick={() => handleSignIn('admin@demo.jaago.app')}
-            disabled={loading}
-            className="w-full flex items-center justify-between p-3 rounded-control border border-border bg-kerb hover:bg-border-subtle text-left transition"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-plate bg-asphalt text-marking-yellow flex items-center justify-center">
-                <Shield className="w-4 h-4" />
-              </div>
-              <div>
-                <p className="text-xs font-heading font-bold text-asphalt">Municipal Admin</p>
-                <p className="text-[11px] font-sans text-asphalt-muted">Control Center &amp; Triage</p>
-              </div>
-            </div>
-            <span className="text-[10px] font-heading font-bold px-2 py-0.5 rounded-plate bg-asphalt text-marking-yellow">
-              Admin
-            </span>
-          </button>
-        </div>
-
-        {/* Divider */}
-        <div className="relative my-3">
-          <div className="absolute inset-0 flex items-center">
-            <div className="w-full border-t border-border" />
-          </div>
-          <div className="relative flex justify-center text-[11px] uppercase">
-            <span className="bg-white px-2 font-heading font-semibold text-asphalt-muted">
-              Or sign in with email
-            </span>
-          </div>
-        </div>
+          </>
+        )}
 
         {/* Custom Credentials Form */}
         <form

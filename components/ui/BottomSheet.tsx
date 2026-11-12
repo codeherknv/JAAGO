@@ -21,29 +21,90 @@ export function BottomSheet({
   maxHeight = 'max-h-[90vh]',
 }: BottomSheetProps) {
   const sheetRef = useRef<HTMLDivElement>(null);
+  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
+    if (!isOpen) return;
+
+    // Save previous active element to restore focus on close
+    previouslyFocusedRef.current = document.activeElement as HTMLElement;
+    document.body.style.overflow = 'hidden';
+
+    // Move initial focus into sheet
+    const timer = setTimeout(() => {
+      if (sheetRef.current) {
+        const focusable = Array.from(
+          sheetRef.current.querySelectorAll<HTMLElement>(
+            'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+          )
+        ).filter((el) => el.offsetParent !== null);
+
+        if (focusable.length > 0) {
+          focusable[0].focus();
+        } else {
+          sheetRef.current.focus();
+        }
+      }
+    }, 50);
+
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen) {
+      // 1. Close on Escape
+      if (e.key === 'Escape') {
+        e.preventDefault();
         onClose();
+        return;
+      }
+
+      // 2. Trap Tab focus inside sheet
+      if (e.key === 'Tab' && sheetRef.current) {
+        const focusable = Array.from(
+          sheetRef.current.querySelectorAll<HTMLElement>(
+            'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+          )
+        ).filter((el) => el.offsetParent !== null);
+
+        if (focusable.length === 0) return;
+
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+
+        if (e.shiftKey) {
+          if (document.activeElement === first) {
+            e.preventDefault();
+            last.focus();
+          }
+        } else {
+          if (document.activeElement === last) {
+            e.preventDefault();
+            first.focus();
+          }
+        }
       }
     };
-    if (isOpen) {
-      document.body.style.overflow = 'hidden';
-      window.addEventListener('keydown', handleKeyDown);
-    } else {
-      document.body.style.overflow = '';
-    }
+
+    window.addEventListener('keydown', handleKeyDown);
+
+    // 3. Return focus to trigger element on close / unmount
     return () => {
+      clearTimeout(timer);
       document.body.style.overflow = '';
       window.removeEventListener('keydown', handleKeyDown);
+      if (
+        previouslyFocusedRef.current &&
+        typeof previouslyFocusedRef.current.focus === 'function'
+      ) {
+        previouslyFocusedRef.current.focus();
+      }
     };
   }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col justify-end sm:justify-center sm:items-center sm:p-4">
+    <div
+      className="fixed inset-0 z-50 flex flex-col justify-end sm:justify-center sm:items-center sm:p-4"
+      role="presentation"
+    >
       {/* Backdrop */}
       <div
         onClick={onClose}
@@ -57,7 +118,8 @@ export function BottomSheet({
         role="dialog"
         aria-modal="true"
         aria-labelledby={title ? 'bottom-sheet-title' : undefined}
-        className={`relative z-10 w-full sm:max-w-xl bg-white rounded-t-control sm:rounded-control border-t sm:border border-border shadow-sheet flex flex-col ${maxHeight} overflow-hidden`}
+        tabIndex={-1}
+        className={`relative z-10 w-full sm:max-w-xl bg-white rounded-t-control sm:rounded-control border-t sm:border border-border shadow-sheet flex flex-col ${maxHeight} overflow-hidden focus:outline-none`}
       >
         {/* Mobile Drag Bar */}
         <div className="flex sm:hidden justify-center pt-2.5 pb-1 cursor-grab" onClick={onClose}>

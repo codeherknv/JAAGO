@@ -269,25 +269,47 @@ Redesigned for citizens outdoors on phones, often one-handed:
 
 7. **Code Quality & Production Gates:**
    - Production-gated `/dev/components` using `if (process.env.NODE_ENV === 'production') notFound()`.
-   - Replaced all remaining raw `<img>` tags with `next/image` across the codebase.
+   - Replaced all raw `<img>` tags with `next/image` across the codebase with configured `remotePatterns` for `res.cloudinary.com` and `images.unsplash.com`. Removed `unoptimized` except for client-generated data/blob URLs.
    - Fixed `useEffect` dependency warnings; `npm run lint` passes with **0 errors and 0 warnings**.
 
-8. **Seed Data Integrity:**
-   - Believable Bengaluru pilot locations, coordinates, and categories across Bellandur, HSR Layout, and Koramangala.
+8. **Seed Data & Photo Ingestion:**
+   - Created `seed/photos.json` containing 32 distinct Cloudinary asset URLs formatted to match `https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/...`.
+   - Updated `scripts/seedPilot.ts` to dynamically load `seed/photos.json`.
+   - Seeded 16 believable civic issues with accurate street addresses and coordinates strictly within ward boundaries for Bellandur (W-150), HSR Layout (W-174), and Koramangala (W-151).
+   - Resolved tickets include both before (`imageUrl`) and after (`resolutionImageUrl`) photos.
+   - Historical `createdAt` timestamps prevent triggering the 3-per-hour rate limit while maintaining chronological timeline integrity.
+
+9. **Accessibility & Interactive Polish:**
+   - Implemented `<Modal>` component with full focus trapping (Tab/Shift+Tab), Escape key dismissal, and automatic focus return to trigger elements. Replaced all 5 custom admin overlays with `<Modal>`.
+   - Updated `BottomSheet` with focus trapping and focus return.
+   - Camera media streams now rigorously call `.stop()` on all active tracks on close and unmount in both `/report` and `/officer/dashboard`. Added clear permission-denied banners with fallback device file upload inputs.
+   - Map tiles read `NEXT_PUBLIC_TILE_URL` and `NEXT_PUBLIC_TILE_ATTRIBUTION` env variables with visible OSM attribution and `.leaflet-tile-pane { filter: grayscale(45%) contrast(92%); }`.
+   - Officer priority scores replaced with plain-language civic priority explanation sentences (`High priority: 3 supporters, open 1d, Roads SLA`) with numeric scores in tooltips.
+   - Map pins give 'Reopened - Escalated' and 'Disputed - Admin Review' distinct purple styling (`#7C3AED`) on both map pins and status badges, with matching legend entry.
+   - Login demo persona buttons conditionally rendered strictly when `DEMO_AUTH=true`.
 
 ---
 
 ### Complete Screenshot Catalog (18 Artifacts in `docs/screenshots/`)
 All views captured via automated Chrome DevTools Protocol harness (`scripts/takeAllScreenshots.ts`):
+- `home-390px.png` & `home-1280px.png`
 - `explore-390px.png` & `explore-1280px.png`
-- `officer-dashboard-390px.png` & `officer-dashboard-1280px.png`
+- `report-390px.png` & `report-1280px.png`
+- `complaint-detail-390px.png` & `complaint-detail-1280px.png`
 - `leaderboard-390px.png` & `leaderboard-1280px.png`
 - `my-complaints-390px.png` & `my-complaints-1280px.png`
 - `admin-390px.png` & `admin-1280px.png`
 - `login-390px.png` & `login-1280px.png`
-- `report-390px.png` & `report-1280px.png`
-- `complaint-390px.png` & `complaint-1280px.png`
-- `components-390px.png` & `components-1280px.png`
+- `officer-dashboard-390px.png` & `officer-dashboard-1280px.png`
+
+---
+
+### Honest Visual Critique of Remaining Issues
+1. **Dual Action Buttons on Desktop (`/explore` and `/my-complaints`):** The global header renders `+ Report a problem` and the page view simultaneously renders another `+ Report a problem` within 50–100px.
+2. **Mobile Table Horizontal Scrolling (`/admin`):** The 6-column officer allow-list table overflows horizontally on 390px mobile view, requiring horizontal swipe rather than responsive card stacking.
+3. **Priority Badge Word Wrapping (`/officer/dashboard`):** Long category names in the priority explanation pill (e.g. `Water Supply & Drainage SLA`) cause adjacent `5d open` text to wrap onto a second line in narrow desktop columns.
+4. **Desktop Sidebar Whitespace (`/leaderboard` and `/admin`):** Centered containers leave large lateral kerb margins on displays $\ge 1280\text{px}$.
+5. **Handle Glyph Contrast (`/complaints/[id]`):** White `<>` comparison arrows on marking-yellow slider handle have modest contrast against bright backgrounds.
 
 ---
 

@@ -23,6 +23,7 @@ import {
 import { Button } from '@/components/ui/Button';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { Modal } from '@/components/ui/Modal';
 
 interface Officer {
   _id: string;
@@ -582,7 +583,14 @@ export default function AdminDashboardPage() {
                         </span>
                         {c.imageUrl ? (
                           <div className="relative aspect-video rounded-control overflow-hidden border border-border bg-white">
-                            <Image src={c.imageUrl} alt="Original" fill sizes="400px" className="object-cover" unoptimized />
+                            <Image
+                              src={c.imageUrl}
+                              alt="Original"
+                              fill
+                              sizes="400px"
+                              className="object-cover"
+                              unoptimized={c.imageUrl.startsWith('data:') || c.imageUrl.startsWith('blob:')}
+                            />
                           </div>
                         ) : (
                           <div className="aspect-video bg-white rounded-control flex items-center justify-center text-xs text-asphalt-muted">
@@ -596,7 +604,14 @@ export default function AdminDashboardPage() {
                         </span>
                         {c.resolutionImageUrl ? (
                           <div className="relative aspect-video rounded-control overflow-hidden border border-border bg-white">
-                            <Image src={c.resolutionImageUrl} alt="Resolution" fill sizes="400px" className="object-cover" unoptimized />
+                            <Image
+                              src={c.resolutionImageUrl}
+                              alt="Resolution"
+                              fill
+                              sizes="400px"
+                              className="object-cover"
+                              unoptimized={c.resolutionImageUrl.startsWith('data:') || c.resolutionImageUrl.startsWith('blob:')}
+                            />
                           </div>
                         ) : (
                           <div className="aspect-video bg-white rounded-control flex items-center justify-center text-xs text-asphalt-muted">
@@ -687,12 +702,14 @@ export default function AdminDashboardPage() {
       </div>
 
       {/* Confirmation Dialog: Deactivate / Reactivate Officer */}
-      {deactivatingOfficer && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-asphalt/50 backdrop-blur-sm">
-          <div className="bg-white rounded-control border border-border shadow-sheet p-6 max-w-sm w-full space-y-4">
-            <h3 className="font-heading font-bold text-base text-asphalt">
-              {deactivatingOfficer.isActive ? 'Deactivate Field Officer' : 'Reactivate Field Officer'}
-            </h3>
+      <Modal
+        isOpen={Boolean(deactivatingOfficer)}
+        onClose={() => setDeactivatingOfficer(null)}
+        title={deactivatingOfficer?.isActive ? 'Deactivate Field Officer' : 'Reactivate Field Officer'}
+        maxWidth="max-w-sm"
+      >
+        {deactivatingOfficer && (
+          <div className="space-y-4">
             <p className="text-xs font-sans text-asphalt-muted leading-relaxed">
               Are you sure you want to {deactivatingOfficer.isActive ? 'deactivate' : 'reactivate'}{' '}
               <strong className="text-asphalt font-semibold">{deactivatingOfficer.name}</strong>?
@@ -712,16 +729,18 @@ export default function AdminDashboardPage() {
               </Button>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </Modal>
 
       {/* Confirmation Dialog: Triage Assignment */}
-      {actionComplaint && actionType === 'assign' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-asphalt/50 backdrop-blur-sm">
-          <div className="bg-white rounded-control border border-border shadow-sheet p-6 max-w-md w-full space-y-4">
-            <h3 className="font-heading font-bold text-base text-asphalt">
-              Manual Ward &amp; Agency Routing
-            </h3>
+      <Modal
+        isOpen={Boolean(actionComplaint && actionType === 'assign')}
+        onClose={() => setActionComplaint(null)}
+        title="Manual Ward & Agency Routing"
+        maxWidth="max-w-md"
+      >
+        {actionComplaint && (
+          <div className="space-y-4">
             <p className="text-xs text-asphalt-muted">{actionComplaint.title}</p>
 
             <form onSubmit={handleAssignComplaint} className="space-y-3">
@@ -786,16 +805,18 @@ export default function AdminDashboardPage() {
               </div>
             </form>
           </div>
-        </div>
-      )}
+        )}
+      </Modal>
 
       {/* Confirmation Dialog: Dispute Arbitration */}
-      {actionComplaint && (actionType === 'resolveDispute' || actionType === 'rejectDispute') && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-asphalt/50 backdrop-blur-sm">
-          <div className="bg-white rounded-control border border-border shadow-sheet p-6 max-w-md w-full space-y-4">
-            <h3 className="font-heading font-bold text-base text-asphalt">
-              {actionType === 'resolveDispute' ? 'Arbitrate Dispute: Accept Resolution' : 'Arbitrate Dispute: Reject & Reopen'}
-            </h3>
+      <Modal
+        isOpen={Boolean(actionComplaint && (actionType === 'resolveDispute' || actionType === 'rejectDispute'))}
+        onClose={() => setActionComplaint(null)}
+        title={actionType === 'resolveDispute' ? 'Arbitrate Dispute: Accept Resolution' : 'Arbitrate Dispute: Reject & Reopen'}
+        maxWidth="max-w-md"
+      >
+        {actionComplaint && (
+          <div className="space-y-4">
             <p className="text-xs text-asphalt-muted leading-relaxed">
               {actionType === 'resolveDispute'
                 ? 'Confirming this resolution will mark the complaint as Resolved - Citizen Verified through administrative executive authority.'
@@ -830,16 +851,18 @@ export default function AdminDashboardPage() {
               </Button>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </Modal>
 
       {/* Confirmation Dialog: Invalidate Complaint */}
-      {actionComplaint && actionType === 'invalidate' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-asphalt/50 backdrop-blur-sm">
-          <div className="bg-white rounded-control border border-border shadow-sheet p-6 max-w-md w-full space-y-4">
-            <h3 className="font-heading font-bold text-base text-asphalt">
-              Mark Complaint Rejected - Invalid
-            </h3>
+      <Modal
+        isOpen={Boolean(actionComplaint && actionType === 'invalidate')}
+        onClose={() => setActionComplaint(null)}
+        title="Mark Complaint Rejected - Invalid"
+        maxWidth="max-w-md"
+      >
+        {actionComplaint && (
+          <div className="space-y-4">
             <p className="text-xs text-asphalt-muted leading-relaxed">
               This action terminates the redressal workflow for &quot;{actionComplaint.title}&quot;. A clear public reason must be recorded in the audit trail.
             </p>
@@ -872,93 +895,87 @@ export default function AdminDashboardPage() {
               </Button>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </Modal>
 
       {/* Modal: Add Officer */}
-      {showAddOfficerModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-asphalt/50 backdrop-blur-sm">
-          <div className="bg-white rounded-control border border-border shadow-sheet p-6 max-w-md w-full space-y-4">
-            <div className="flex items-center justify-between pb-2 border-b border-border">
-              <h3 className="font-heading font-bold text-base text-asphalt">Authorize New Field Officer</h3>
-              <button onClick={() => setShowAddOfficerModal(false)} className="text-asphalt-muted hover:text-asphalt">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <form onSubmit={handleAddOfficer} className="space-y-3">
-              <div>
-                <label className="block text-xs font-heading font-bold text-asphalt mb-1">Full Name</label>
-                <input
-                  required
-                  type="text"
-                  value={newOfficer.name}
-                  onChange={(e) => setNewOfficer({ ...newOfficer, name: e.target.value })}
-                  placeholder="e.g. Ramesh Gowda (AEE)"
-                  className="w-full px-3 py-2 text-xs font-sans rounded-plate border border-border bg-white text-asphalt"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-heading font-bold text-asphalt mb-1">
-                  Email Address (@demo.jaago.app)
-                </label>
-                <input
-                  required
-                  type="email"
-                  value={newOfficer.email}
-                  onChange={(e) => setNewOfficer({ ...newOfficer, email: e.target.value })}
-                  placeholder="officer.ward@demo.jaago.app"
-                  className="w-full px-3 py-2 text-xs font-sans rounded-plate border border-border bg-white text-asphalt"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-heading font-bold text-asphalt mb-1">Assigned Ward</label>
-                <select
-                  required
-                  value={newOfficer.assignedWardId}
-                  onChange={(e) => setNewOfficer({ ...newOfficer, assignedWardId: e.target.value })}
-                  className="w-full px-3 py-2 text-xs font-heading font-semibold rounded-plate border border-border bg-white text-asphalt"
-                >
-                  <option value="">Select Ward</option>
-                  {wards.map((w) => (
-                    <option key={w._id} value={w._id}>
-                      {w.name} ({w.code})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-heading font-bold text-asphalt mb-1">Assigned Agency</label>
-                <select
-                  required
-                  value={newOfficer.agencyId}
-                  onChange={(e) => setNewOfficer({ ...newOfficer, agencyId: e.target.value })}
-                  className="w-full px-3 py-2 text-xs font-heading font-semibold rounded-plate border border-border bg-white text-asphalt"
-                >
-                  <option value="">Select Agency</option>
-                  {agencies.map((a) => (
-                    <option key={a._id} value={a._id}>
-                      {a.shortName} - {a.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2 border-t border-border">
-                <Button type="button" variant="secondary" size="sm" onClick={() => setShowAddOfficerModal(false)}>
-                  Cancel
-                </Button>
-                <Button type="submit" variant="primary" size="sm" disabled={submitting}>
-                  {submitting ? 'Authorizing...' : 'Authorize Officer'}
-                </Button>
-              </div>
-            </form>
+      <Modal
+        isOpen={showAddOfficerModal}
+        onClose={() => setShowAddOfficerModal(false)}
+        title="Authorize New Field Officer"
+        maxWidth="max-w-md"
+      >
+        <form onSubmit={handleAddOfficer} className="space-y-3">
+          <div>
+            <label className="block text-xs font-heading font-bold text-asphalt mb-1">Full Name</label>
+            <input
+              required
+              type="text"
+              value={newOfficer.name}
+              onChange={(e) => setNewOfficer({ ...newOfficer, name: e.target.value })}
+              placeholder="e.g. Ramesh Gowda (AEE)"
+              className="w-full px-3 py-2 text-xs font-sans rounded-plate border border-border bg-white text-asphalt"
+            />
           </div>
-        </div>
-      )}
+
+          <div>
+            <label className="block text-xs font-heading font-bold text-asphalt mb-1">
+              Email Address (@demo.jaago.app)
+            </label>
+            <input
+              required
+              type="email"
+              value={newOfficer.email}
+              onChange={(e) => setNewOfficer({ ...newOfficer, email: e.target.value })}
+              placeholder="officer.ward@demo.jaago.app"
+              className="w-full px-3 py-2 text-xs font-sans rounded-plate border border-border bg-white text-asphalt"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-heading font-bold text-asphalt mb-1">Assigned Ward</label>
+            <select
+              required
+              value={newOfficer.assignedWardId}
+              onChange={(e) => setNewOfficer({ ...newOfficer, assignedWardId: e.target.value })}
+              className="w-full px-3 py-2 text-xs font-heading font-semibold rounded-plate border border-border bg-white text-asphalt"
+            >
+              <option value="">Select Ward</option>
+              {wards.map((w) => (
+                <option key={w._id} value={w._id}>
+                  {w.name} ({w.code})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-heading font-bold text-asphalt mb-1">Assigned Agency</label>
+            <select
+              required
+              value={newOfficer.agencyId}
+              onChange={(e) => setNewOfficer({ ...newOfficer, agencyId: e.target.value })}
+              className="w-full px-3 py-2 text-xs font-heading font-semibold rounded-plate border border-border bg-white text-asphalt"
+            >
+              <option value="">Select Agency</option>
+              {agencies.map((a) => (
+                <option key={a._id} value={a._id}>
+                  {a.shortName} - {a.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2 border-t border-border">
+            <Button type="button" variant="secondary" size="sm" onClick={() => setShowAddOfficerModal(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" variant="primary" size="sm" disabled={submitting}>
+              {submitting ? 'Authorizing...' : 'Authorize Officer'}
+            </Button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import mongoose from 'mongoose';
 import { User } from '../models/User';
+import { Complaint } from '../models/Complaint';
 import { seedPilotDatabase } from './seedPilot';
 import { spawn } from 'child_process';
 import path from 'path';
@@ -203,8 +204,17 @@ async function main() {
       fs.mkdirSync(screenshotsDir, { recursive: true });
     }
 
+    const sampleComplaint =
+      (await Complaint.findOne({ status: 'Pending Verification' })) ||
+      (await Complaint.findOne({}));
+
     const pages = [
+      { name: 'home', url: 'http://localhost:3007/', token: null },
       { name: 'explore', url: 'http://localhost:3007/explore', token: null },
+      { name: 'report', url: 'http://localhost:3007/report', token: citizenToken },
+      ...(sampleComplaint
+        ? [{ name: 'complaint-detail', url: `http://localhost:3007/complaints/${sampleComplaint._id}`, token: null }]
+        : []),
       { name: 'leaderboard', url: 'http://localhost:3007/leaderboard', token: null },
       { name: 'login', url: 'http://localhost:3007/login', token: null },
       { name: 'officer-dashboard', url: 'http://localhost:3007/officer/dashboard', token: officerToken },

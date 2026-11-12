@@ -62,6 +62,65 @@ export default function ReportPage() {
   const [upvotingId, setUpvotingId] = useState<string | null>(null);
   const [upvoteNotice, setUpvoteNotice] = useState<string | null>(null);
 
+  // Camera stream state
+  const [isCameraActive, setIsCameraActive] = useState(false);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+
+  // Clean up media tracks on unmount
+  useEffect(() => {
+    return () => {
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+        mediaStreamRef.current = null;
+      }
+    };
+  }, []);
+
+  const stopCamera = () => {
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+      mediaStreamRef.current = null;
+    }
+    setIsCameraActive(false);
+  };
+
+  const startCamera = async () => {
+    setCameraError(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: false,
+      });
+      mediaStreamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.play();
+      }
+      setIsCameraActive(true);
+    } catch (err: any) {
+      setCameraError(
+        'Camera permission was denied or unavailable. Please use the button below to upload a photo from your device.'
+      );
+      setIsCameraActive(false);
+    }
+  };
+
+  const capturePhoto = () => {
+    if (!videoRef.current) return;
+    const canvas = document.createElement('canvas');
+    canvas.width = videoRef.current.videoWidth || 640;
+    canvas.height = videoRef.current.videoHeight || 480;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+      const dataUri = canvas.toDataURL('image/jpeg', 0.85);
+      setImagePreview(dataUri);
+      stopCamera();
+    }
+  };
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Handle GPS location capture
@@ -314,28 +373,7 @@ export default function ReportPage() {
               className="hidden"
             />
 
-            {!imagePreview ? (
-              <div
-                onClick={() => fileInputRef.current?.click()}
-                className="w-full aspect-[4/3] rounded-control border-2 border-dashed border-border bg-kerb hover:bg-kerb-dark/50 cursor-pointer flex flex-col items-center justify-center p-6 text-center transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-signboard-blue"
-                tabIndex={0}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    fileInputRef.current?.click();
-                  }
-                }}
-              >
-                <div className="w-14 h-14 rounded-full bg-marking-yellow border-2 border-asphalt flex items-center justify-center text-asphalt shadow-float mb-3">
-                  <Camera className="w-7 h-7 stroke-[2]" />
-                </div>
-                <p className="text-sm font-heading font-bold text-asphalt">
-                  {t.takeLivePhoto}
-                </p>
-                <p className="text-xs text-asphalt-muted mt-1 max-w-xs">
-                  Tap to open camera or select an existing photo under 5MB.
-                </p>
-              </div>
-            ) : (
+            {imagePreview ? (
               <div className="space-y-3">
                 <div className="relative w-full aspect-[4/3] rounded-control overflow-hidden border border-border bg-asphalt">
                   <Image
@@ -344,7 +382,7 @@ export default function ReportPage() {
                     fill
                     sizes="(max-width: 768px) 100vw, 600px"
                     className="object-cover"
-                    unoptimized={imagePreview.startsWith('data:')}
+                    unoptimized={imagePreview.startsWith('data:') || imagePreview.startsWith('blob:')}
                   />
                   <div className="absolute top-2 left-2 px-2 py-0.5 bg-asphalt/80 text-white rounded-plate text-[11px] font-heading font-semibold border border-white/20">
                     Photo captured
@@ -355,12 +393,85 @@ export default function ReportPage() {
                   <Button
                     variant="secondary"
                     fullWidth
-                    onClick={() => fileInputRef.current?.click()}
+                    onClick={() => {
+                      setImagePreview(null);
+                      setImageFile(null);
+                    }}
                   >
                     <RefreshCw className="w-4 h-4 mr-1.5" />
                     {t.changePhoto}
                   </Button>
                 </div>
+              </div>
+            ) : isCameraActive ? (
+              <div className="relative aspect-[4/3] bg-black rounded-control overflow-hidden">
+                <video
+                  ref={videoRef}
+                  playsInline
+                  muted
+                  className="w-full h-full object-cover"
+                />
+                <div className="absolute bottom-3 inset-x-0 flex justify-center gap-3">
+                  <Button type="button" variant="primary" size="sm" onClick={capturePhoto}>
+                    Capture Photo
+                  </Button>
+                  <Button type="button" variant="secondary" size="sm" onClick={stopCamera}>
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="w-full aspect-[4/3] rounded-control border-2 border-dashed border-border bg-kerb flex flex-col items-center justify-center p-6 text-center">
+                  <div className="w-14 h-14 rounded-full bg-marking-yellow border-2 border-asphalt flex items-center justify-center text-asphalt shadow-float mb-3">
+                    <Camera className="w-7 h-7 stroke-[2]" />
+                  </div>
+                  <p className="text-sm font-heading font-bold text-asphalt">
+                    {t.takeLivePhoto}
+                  </p>
+                  <p className="text-xs text-asphalt-muted mt-1 max-w-xs mb-4">
+                    Take an outdoor photo with your camera or select an existing photo under 5MB.
+                  </p>
+
+                  <div className="flex flex-col sm:flex-row gap-2 w-full max-w-xs">
+                    <Button
+                      type="button"
+                      variant="primary"
+                      onClick={startCamera}
+                      className="flex-1 flex items-center justify-center gap-1.5"
+                    >
+                      <Camera className="w-4 h-4" />
+                      <span>Live Camera</span>
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="flex-1 flex items-center justify-center gap-1.5"
+                    >
+                      <span>Upload Photo</span>
+                    </Button>
+                  </div>
+                </div>
+
+                {cameraError && (
+                  <div className="p-3 rounded-control bg-alert-red/10 border border-alert-red/30 text-xs font-sans text-alert-red space-y-2">
+                    <div className="flex items-center gap-1.5 font-heading font-semibold">
+                      <AlertCircle className="w-4 h-4 shrink-0" />
+                      <span>Camera Access Unavailable</span>
+                    </div>
+                    <p className="leading-relaxed">{cameraError}</p>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="w-full"
+                    >
+                      Select Image File
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
 

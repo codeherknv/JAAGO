@@ -5,6 +5,12 @@ import { MapContainer, TileLayer, Marker, Polygon, Tooltip } from 'react-leaflet
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
+const DEFAULT_TILE_URL =
+  process.env.NEXT_PUBLIC_TILE_URL || 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+const DEFAULT_TILE_ATTRIBUTION =
+  process.env.NEXT_PUBLIC_TILE_ATTRIBUTION ||
+  '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors';
+
 interface CivicLeafletMapProps {
   complaints: any[];
   wards: any[];
@@ -56,8 +62,15 @@ function createStatusIcon(status: string, isSelected: boolean = false) {
         <div style="width:6px; height:6px; border-radius:50%; background-color:#FFFFFF;"></div>
       </div>
     `;
+  } else if (status.startsWith('Reopened') || status.startsWith('Disputed')) {
+    // Distinct Purple Plate with purple outline and white dot
+    shapeHtml = `
+      <div style="width:${size}px; height:${size}px; border-radius:3px; background-color:#7C3AED; border:2px solid #FFFFFF; box-shadow: 0 0 0 2px #7C3AED, 0 3px 6px rgba(0,0,0,0.3); display:flex; align-items:center; justify-content:center;">
+        <div style="width:6px; height:6px; border-radius:1px; background-color:#FFFFFF;"></div>
+      </div>
+    `;
   } else {
-    // Reopened / Disputed: Alert Red badge with asphalt border
+    // Default Alert Red badge with asphalt border
     shapeHtml = `
       <div style="width:${size}px; height:${size}px; border-radius:2px; background-color:#C8372D; border:2px solid #23272B; display:flex; align-items:center; justify-content:center; ${ring}">
         <div style="width:7px; height:7px; border-radius:1px; background-color:#F2B705;"></div>
@@ -111,8 +124,8 @@ export default function CivicLeafletMap({
       >
         {/* Muted low-saturation base tiles */}
         <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          attribution={DEFAULT_TILE_ATTRIBUTION}
+          url={DEFAULT_TILE_URL}
           maxZoom={19}
         />
 
