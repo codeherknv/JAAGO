@@ -73,3 +73,8 @@ textarea:focus-visible {
     scroll-behavior: auto !important;
   }
 }
+
+/* Leaflet Muted Low-Saturation Road Base Tiles */
+.leaflet-tile-pane {
+  filter: grayscale(45%) contrast(92%);
+}

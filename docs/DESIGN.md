@@ -265,3 +265,70 @@ All screen sizes verified and saved in `docs/screenshots/`:
 - `complaint-390px.png` & `complaint-1280px.png`: Full detail view with Before/After slider, citizen audit action, and road timeline.
 - `components-390px.png` & `components-1280px.png`: Complete token swatch palette, status badges, complaint rows, buttons, and switches.
 
+---
+
+## 7. Stage 4: Full System Design Application & Critique
+
+### 7.1 Page Redesign Implementations
+1. **`/explore` (Geospatial Redressal Map):**
+   - **Full-Screen Canvas:** Map fills 100% of the viewport with responsive mobile tab padding (`pb-16 md:pb-0`).
+   - **Muted Base Map:** Low-saturation OpenStreetMap tiles with CSS filtering (`grayscale(45%) contrast(92%)`) providing a neutral concrete backdrop that lets status markers pop without visual clutter.
+   - **Shape-Coded & Color-Coded Pins:** Implemented with `L.divIcon`:
+     - *Pending:* Circle (`rounded-full bg-alert-red`, white border, white core)
+     - *In Progress:* Square Plate (`rounded-plate bg-marking-yellow`, dark asphalt border and core)
+     - *Pending Verification:* Diamond (`rotate-45 bg-signboard-blue`, white border and core)
+     - *Resolved:* Enamel Plate (`rounded-plate bg-fixed-green`, white border, white dot)
+     - *Reopened / Disputed:* Alert Plate (`bg-alert-red`, asphalt border, yellow dot)
+   - **Controls:** Floating top bar with horizontal-scrolling category chips, ward selector, refresh button, and prominent marking yellow `+ Report a problem` button.
+   - **Interaction:** Tapping any marker opens a `BottomSheet` presenting the issue as a full `ComplaintRow` with immediate "View details" link.
+
+2. **`/officer/dashboard` (Field Command Queue):**
+   - **Responsive Layout:** On desktop (1280px), 7-column prioritized list on the left and 5-column sticky GIS map on the right. On mobile (390px), stacked list layout.
+   - **Urgency Metrics:** Every ticket displays its Civic Priority score (`P: 14.5`), days open (`0h open` / `2d open`), category plate, and status badge.
+   - **Plain GPS Result:** Plain physical distance readout (`"You're 12 m from the site (accuracy: ±8 m)"`) with green on-site badge ($\le 50\text{m}$) or red out-of-range indicator ($> 50\text{m}$).
+   - **Camera Stream with Fallback:** Native HTML5 video camera stream with capture canvas, accompanied by a desktop file upload fallback.
+
+3. **`/leaderboard` (Municipal CTI Ranking):**
+   - **Plain Explanatory Sentence:** *"The Civic Trust Index measures how reliably and promptly municipal complaints are resolved and verified by citizens."*
+   - **Flat Ranked List:** Replaced all 3-card marketing podiums with a single, flat 1px-divided plate.
+   - **Sample Size Beside Every Score:** Shows sample size next to CTI (e.g. `(12 closed)` or `(1 of 10 closed)`).
+   - **Statistical Significance Threshold:** Wards with $< 10$ closed complaints explicitly show `"Not enough data (X of 10 closed)"`.
+   - **Side-by-Side Metrics:** Citizen verified and auto-closed counts displayed side by side (`Citizen verified: 1 | Auto-closed: 0`), with participation rate and overdue open rate beside the CTI.
+
+4. **`/my-complaints` (Citizen History):**
+   - Flat list using `ComplaintRow` components.
+   - Four top KPI metric plates (Total Filed, In Verification, Resolved, Waiting for Routing).
+   - Explicit amber plate badge for unrouted complaints (`Waiting for routing`).
+   - Clean `EmptyState` component for zero-complaint or filtered results.
+
+5. **`/admin` (Municipal Control Center):**
+   - Clean tabular views for Officer Allow-List, Unrouted Triage Queue, Disputed Review, and Invalidation.
+   - Accessible modal confirmation dialogs for all mutating actions (deactivate officer, assign ward/agency, arbitrate dispute, invalidate report).
+   - Replaced all raw `<img>` tags with Next.js `<Image unoptimized />`.
+
+6. **`/login` (Identity Portal):**
+   - Mile-marker `JG` yellow badge.
+   - 1-click persona buttons with role plate badges (Officer, Citizen, Admin).
+   - Clean 8px input controls in pure kerb/asphalt styling.
+
+### 7.2 Stage 4 Squint-Test & Critique Log
+- **Critique 1 (Base Map Tiles):** Initial use of CartoDB tiles produced an unsightly "API KEY REQUIRED" watermark diagonally across the map.  
+  *Fix:* Replaced CartoDB tiles with standard OpenStreetMap tiles paired with a CSS filter `.leaflet-tile-pane { filter: grayscale(45%) contrast(92%); }`. Results in clean, low-saturation street map rendering with zero watermarks.
+- **Critique 2 (Broken Thumbnails):** When complaints referenced mock Cloudinary URLs in local dev/tests, `ComplaintRow` displayed the browser's default broken image icon.  
+  *Fix:* Added an `onError` fallback state to `ComplaintRow` that seamlessly renders a neutral kerb plate with a map pin icon whenever an asset fails to load.
+- **Critique 3 (Visual Hierarchy):** On desktop, the 7/5 split in `/officer/dashboard` allows the officer to review their priority queue without losing spatial context on the right-hand map.
+
+### 7.3 Complete Screenshot Catalog (18 Artifacts in `docs/screenshots/`)
+| Page | 390px Mobile | 1280px Desktop | Key Elements Verified |
+| :--- | :--- | :--- | :--- |
+| **Explore** | `explore-390px.png` | `explore-1280px.png` | Full-screen map, muted tiles, shape/color pins, filter chips, yellow report button |
+| **Officer Dashboard** | `officer-dashboard-390px.png` | `officer-dashboard-1280px.png` | 7/5 split desktop, stacked mobile, priority score, days open, GPS readout |
+| **Leaderboard** | `leaderboard-390px.png` | `leaderboard-1280px.png` | Plain explanatory sentence, ranked list, sample size, verified & auto-closed side by side |
+| **My Complaints** | `my-complaints-390px.png` | `my-complaints-1280px.png` | KPI metric plates, filter chips, ComplaintRow list, waiting for routing badges |
+| **Admin** | `admin-390px.png` | `admin-1280px.png` | Clean tables, officer allow-list, triage queue, dispute review, confirmation dialogs |
+| **Login** | `login-390px.png` | `login-1280px.png` | JG mile-marker logo, 1-click personas, role badges, clean inputs |
+| **Report** | `report-390px.png` | `report-1280px.png` | 3-step sheet, live camera shutter, GPS readout, inline duplicate detection |
+| **Complaint Detail** | `complaint-390px.png` | `complaint-1280px.png` | Before/After slider anchor, citizen audit action, road centerline timeline |
+| **Components** | `components-390px.png` | `components-1280px.png` | Living design system styleguide, color tokens, button variants, badges |
+
+

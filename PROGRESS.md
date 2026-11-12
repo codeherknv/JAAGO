@@ -230,9 +230,72 @@ Redesigned for citizens outdoors on phones, often one-handed:
 
 ---
 
-### Visual Verification & Screenshot Evidence
-All captures recorded via headless Chrome and stored in `docs/screenshots/`:
-- `docs/screenshots/report-390px.png` & `report-1280px.png`: 3-step report flow with camera capture, GPS indicator, and duplicate preview.
-- `docs/screenshots/complaint-390px.png` & `complaint-1280px.png`: Complaint detail view with Before/After slider, citizen audit action, and road timeline.
-- `docs/screenshots/components-390px.png` & `components-1280px.png`: Component system swatch palette, status badges, rows, and buttons.
+### Stage 4: Remaining Pages Redesign & Polish
+1. **`/explore` (Geospatial Redressal Map):**
+   - Full-screen interactive map canvas with low-saturation OpenStreetMap tiles (`filter: grayscale(45%) contrast(92%)`) eliminating API key watermarks.
+   - Status pins shaped AND coloured by status via `divIcon` (red circle for Pending, yellow square for In Progress, blue diamond for Pending Verification, green plate for Resolved).
+   - Floating header controls: horizontal category filter chips, ward selector, refresh button, and primary yellow `+ Report a problem` button.
+   - Marker click interaction opens accessible `BottomSheet` with `ComplaintRow` and direct "View details" link.
+   - Fully localized via `useTranslation()`.
+
+2. **`/officer/dashboard` (Field Command Queue):**
+   - Responsive 2-column layout on desktop (7-col priority list on left, 5-col sticky GIS map on right) and stacked list on mobile.
+   - Prominent priority score (`P: 14.5`), days open, category tag, and status badge on each item.
+   - Plain GPS physical presence readout: `"You're 12 m from the site (accuracy: ±8 m)"` with green on-site badge ($\le 50\text{m}$) or red out-of-range alert.
+   - Live camera stream modal (`<video>` stream + canvas capture) with desktop file upload fallback.
+   - Fixed `loadData` `useEffect` missing dependency warning via `useCallback`.
+
+3. **`/leaderboard` (Municipal CTI Ranking):**
+   - Single plain sentence explaining the index: *"The Civic Trust Index measures how reliably and promptly municipal complaints are resolved and verified by citizens."*
+   - Pure calm street infrastructure ranked list plate (all marketing podiums, yellow rings, and hover-lift transforms removed).
+   - Sample size displayed next to every score (e.g. `(12 closed)` or `(1 of 10 closed)`).
+   - Explicit `"Not enough data (X of 10 closed)"` plate badge for wards below the 10 closed tickets threshold.
+   - Citizen verified and auto-closed counts displayed side by side (`Citizen verified: 1 | Auto-closed: 0`).
+   - Overdue open rate displayed adjacent to the CTI.
+
+4. **`/my-complaints` (Citizen History):**
+   - Flat list using `ComplaintRow` items with 1px border dividers.
+   - Four top summary metric plates (Total Filed, In Verification, Resolved, Waiting for Routing).
+   - Explicit amber plate badge for unrouted complaints (`Waiting for routing`).
+   - Reusable `EmptyState` component for filtered and zero-ticket states.
+
+5. **`/admin` (Municipal Control Center):**
+   - Clean tabular layouts for Officer Allow-List, Triage Queue, Disputed Review, and Invalidate Reports.
+   - Confirmation dialogs for all mutating/destructive actions (deactivate officer, assign ward/agency, arbitrate dispute, invalidate report).
+   - Replaced all raw `<img>` tags with Next.js `<Image unoptimized />`.
+
+6. **`/login` (Identity Portal):**
+   - Styled in calm street infrastructure: yellow mile-marker logo, role plate badges (Officer, Citizen, Admin), 8px controls, yellow sign in button.
+
+7. **Code Quality & Production Gates:**
+   - Production-gated `/dev/components` using `if (process.env.NODE_ENV === 'production') notFound()`.
+   - Replaced all remaining raw `<img>` tags with `next/image` across the codebase.
+   - Fixed `useEffect` dependency warnings; `npm run lint` passes with **0 errors and 0 warnings**.
+
+8. **Seed Data Integrity:**
+   - Believable Bengaluru pilot locations, coordinates, and categories across Bellandur, HSR Layout, and Koramangala.
+
+---
+
+### Complete Screenshot Catalog (18 Artifacts in `docs/screenshots/`)
+All views captured via automated Chrome DevTools Protocol harness (`scripts/takeAllScreenshots.ts`):
+- `explore-390px.png` & `explore-1280px.png`
+- `officer-dashboard-390px.png` & `officer-dashboard-1280px.png`
+- `leaderboard-390px.png` & `leaderboard-1280px.png`
+- `my-complaints-390px.png` & `my-complaints-1280px.png`
+- `admin-390px.png` & `admin-1280px.png`
+- `login-390px.png` & `login-1280px.png`
+- `report-390px.png` & `report-1280px.png`
+- `complaint-390px.png` & `complaint-1280px.png`
+- `components-390px.png` & `components-1280px.png`
+
+---
+
+### Verification Summary
+- `npm run test:fixes`: **PASS (19 / 19 passed)**
+- `npm run test:spatial`: **PASS (3 / 3 passed)**
+- `npm run test:e2e`: **PASS (7 / 7 passed)**
+- `npm run lint`: **PASS (0 errors, 0 warnings)**
+- `npm run build`: **PASS (12 / 12 routes compiled successfully)**
+
 

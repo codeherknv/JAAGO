@@ -1,49 +1,82 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, Polygon } from 'react-leaflet';
+import React from 'react';
+import { MapContainer, TileLayer, Marker, Polygon, Tooltip } from 'react-leaflet';
 import L from 'leaflet';
-import Link from 'next/link';
-import { ThumbsUp, MapPin, ExternalLink } from 'lucide-react';
+import 'leaflet/dist/leaflet.css';
 
 interface CivicLeafletMapProps {
   complaints: any[];
   wards: any[];
   selectedCategory: string;
   selectedWardId: string;
+  onSelectComplaint?: (complaint: any) => void;
+  selectedComplaintId?: string | null;
+  heightClass?: string;
 }
 
-// Function to generate color-coded HTML pin icons
-function createStatusIcon(status: string) {
-  let bgColor = '#ef4444'; // Red for Pending
-  let pulseRing = '';
+/**
+ * Shape AND color-coded status marker using L.divIcon
+ * - Pending: Circle (alert red #C8372D)
+ * - In Progress: Square Plate (marking yellow #F2B705 with dark asphalt core)
+ * - Pending Verification: Diamond / Shield (signboard blue #0B5D8C with white center)
+ * - Resolved: Octagon / Enamel Plate (fixed green #1E8E5A with check dot)
+ * - Reopened / Disputed: Red alert square with warning pulse
+ */
+function createStatusIcon(status: string, isSelected: boolean = false) {
+  let shapeHtml = '';
+  const size = isSelected ? 34 : 26;
+  const ring = isSelected ? 'box-shadow: 0 0 0 3px #F2B705, 0 4px 10px rgba(0,0,0,0.3);' : 'box-shadow: 0 2px 5px rgba(0,0,0,0.25);';
 
-  if (status === 'In Progress') {
-    bgColor = '#f59e0b'; // Amber
+  if (status === 'Pending') {
+    // Circle: Alert Red
+    shapeHtml = `
+      <div style="width:${size}px; height:${size}px; border-radius:50%; background-color:#C8372D; border:2px solid #FFFFFF; display:flex; align-items:center; justify-content:center; ${ring}">
+        <div style="width:7px; height:7px; border-radius:50%; background-color:#FFFFFF;"></div>
+      </div>
+    `;
+  } else if (status === 'In Progress') {
+    // Square plate: Marking Yellow with Asphalt core
+    shapeHtml = `
+      <div style="width:${size}px; height:${size}px; border-radius:2px; background-color:#F2B705; border:2px solid #23272B; display:flex; align-items:center; justify-content:center; ${ring}">
+        <div style="width:7px; height:7px; border-radius:1px; background-color:#23272B;"></div>
+      </div>
+    `;
   } else if (status === 'Pending Verification') {
-    bgColor = '#3b82f6'; // Blue
-    pulseRing = '<div style="position:absolute; inset:-4px; border-radius:50%; border:2px solid #3b82f6; animation: ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite; opacity: 0.75;"></div>';
+    // Diamond / Shield: Signboard Blue with White core
+    shapeHtml = `
+      <div style="width:${size}px; height:${size}px; border-radius:2px; transform: rotate(45deg); background-color:#0B5D8C; border:2px solid #FFFFFF; display:flex; align-items:center; justify-content:center; ${ring}">
+        <div style="width:6px; height:6px; background-color:#FFFFFF; border-radius:1px;"></div>
+      </div>
+    `;
   } else if (status.startsWith('Resolved')) {
-    bgColor = '#10b981'; // Green
-  } else if (status.startsWith('Reopened') || status.startsWith('Disputed')) {
-    bgColor = '#8b5cf6'; // Purple
+    // Octagon / Fixed Green plate with check dot
+    shapeHtml = `
+      <div style="width:${size}px; height:${size}px; border-radius:4px; background-color:#1E8E5A; border:2px solid #FFFFFF; display:flex; align-items:center; justify-content:center; ${ring}">
+        <div style="width:6px; height:6px; border-radius:50%; background-color:#FFFFFF;"></div>
+      </div>
+    `;
+  } else {
+    // Reopened / Disputed: Alert Red badge with asphalt border
+    shapeHtml = `
+      <div style="width:${size}px; height:${size}px; border-radius:2px; background-color:#C8372D; border:2px solid #23272B; display:flex; align-items:center; justify-content:center; ${ring}">
+        <div style="width:7px; height:7px; border-radius:1px; background-color:#F2B705;"></div>
+      </div>
+    `;
   }
 
   const html = `
-    <div style="position:relative; width:28px; height:28px; display:flex; align-items:center; justify-content:center;">
-      ${pulseRing}
-      <div style="width:24px; height:24px; border-radius:50%; background-color:${bgColor}; border:2.5px solid white; box-shadow:0 4px 6px -1px rgba(0,0,0,0.3); display:flex; align-items:center; justify-content:center; color:white; font-size:12px; font-weight:bold;">
-        •
-      </div>
+    <div style="position:relative; width:${size}px; height:${size}px; display:flex; align-items:center; justify-content:center; cursor:pointer;">
+      ${shapeHtml}
     </div>
   `;
 
   return L.divIcon({
     html,
-    className: 'custom-leaflet-marker',
-    iconSize: [28, 28],
-    iconAnchor: [14, 14],
-    popupAnchor: [0, -14],
+    className: 'custom-status-marker',
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+    popupAnchor: [0, -size / 2],
   });
 }
 
@@ -52,6 +85,9 @@ export default function CivicLeafletMap({
   wards,
   selectedCategory,
   selectedWardId,
+  onSelectComplaint,
+  selectedComplaintId,
+  heightClass = 'h-full',
 }: CivicLeafletMapProps) {
   // Center of Greater Bengaluru Pilot (around Bellandur / HSR Layout)
   const defaultCenter: [number, number] = [12.925, 77.655];
@@ -66,16 +102,18 @@ export default function CivicLeafletMap({
   });
 
   return (
-    <div className="relative w-full h-[650px] rounded-3xl overflow-hidden border border-slate-200 shadow-inner">
+    <div className={`relative w-full ${heightClass} overflow-hidden bg-kerb`}>
       <MapContainer
         center={defaultCenter}
         zoom={defaultZoom}
         scrollWheelZoom={true}
         className="w-full h-full"
       >
+        {/* Muted low-saturation base tiles */}
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          maxZoom={19}
         />
 
         {/* Render Bengaluru Pilot Ward Boundaries */}
@@ -86,86 +124,59 @@ export default function CivicLeafletMap({
             (coord: [number, number]) => [coord[1], coord[0]] as [number, number]
           );
 
+          const isSelectedWard = selectedWardId === ward._id;
+
           return (
             <Polygon
               key={ward._id}
               positions={leafletPositions}
               pathOptions={{
-                color: '#ea580c',
-                weight: 2,
-                dashArray: '4, 4',
-                fillColor: '#f97316',
-                fillOpacity: selectedWardId === ward._id ? 0.2 : 0.08,
+                color: isSelectedWard ? '#0B5D8C' : '#5A6065',
+                weight: isSelectedWard ? 2.5 : 1.5,
+                dashArray: isSelectedWard ? undefined : '4, 4',
+                fillColor: isSelectedWard ? '#0B5D8C' : '#8A9096',
+                fillOpacity: isSelectedWard ? 0.12 : 0.04,
               }}
             >
-              <Popup>
-                <div className="p-2 space-y-1">
-                  <p className="font-extrabold text-slate-900 text-sm">
-                    {ward.name} ({ward.code})
-                  </p>
-                  <p className="text-xs text-slate-500">{ward.corporation}</p>
+              <Tooltip direction="center" permanent={false} opacity={0.9}>
+                <div className="font-heading font-bold text-xs text-asphalt">
+                  {ward.name} ({ward.code})
                 </div>
-              </Popup>
+              </Tooltip>
             </Polygon>
           );
         })}
 
-        {/* Render Complaint Markers */}
+        {/* Render Status Complaint Markers */}
         {filteredComplaints.map((c) => {
           if (!c.location?.coordinates) return null;
           const [lng, lat] = c.location.coordinates;
-          const icon = createStatusIcon(c.status);
+          const isSelected = selectedComplaintId === c._id;
+          const icon = createStatusIcon(c.status, isSelected);
 
           return (
-            <Marker key={c._id} position={[lat, lng]} icon={icon}>
-              <Popup>
-                <div className="max-w-[240px] space-y-2 p-1">
-                  <div className="aspect-video w-full rounded-xl overflow-hidden bg-slate-100">
-                    <img
-                      src={c.imageUrl}
-                      alt={c.title}
-                      className="w-full h-full object-cover"
-                    />
+            <Marker
+              key={c._id}
+              position={[lat, lng]}
+              icon={icon}
+              eventHandlers={{
+                click: () => {
+                  if (onSelectComplaint) {
+                    onSelectComplaint(c);
+                  }
+                },
+              }}
+            >
+              <Tooltip direction="top" offset={[0, -14]} opacity={0.95}>
+                <div className="font-sans text-xs max-w-[200px] p-0.5">
+                  <div className="font-heading font-bold text-asphalt text-xs line-clamp-1">
+                    {c.title}
                   </div>
-
-                  <div>
-                    <span
-                      className={`inline-block text-[10px] uppercase font-extrabold px-2 py-0.5 rounded ${
-                        c.status === 'Pending'
-                          ? 'bg-red-100 text-red-800'
-                          : c.status === 'In Progress'
-                          ? 'bg-amber-100 text-amber-800'
-                          : c.status === 'Pending Verification'
-                          ? 'bg-blue-100 text-blue-800'
-                          : 'bg-emerald-100 text-emerald-800'
-                      }`}
-                    >
-                      {c.status}
-                    </span>
-                    <h4 className="font-bold text-slate-900 text-xs mt-1 line-clamp-2">
-                      {c.title}
-                    </h4>
-                    <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-1">
-                      {c.wardId?.name} ({c.wardId?.code})
-                    </p>
-                  </div>
-
-                  <div className="flex items-center justify-between pt-1 border-t border-slate-100 text-xs">
-                    <span className="font-bold text-orange-600 flex items-center space-x-1">
-                      <ThumbsUp className="w-3 h-3" />
-                      <span>{c.upvotesCount}</span>
-                    </span>
-
-                    <Link
-                      href={`/complaints/${c._id}`}
-                      className="text-[11px] font-bold text-blue-600 hover:text-blue-800 flex items-center space-x-0.5"
-                    >
-                      <span>View</span>
-                      <ExternalLink className="w-3 h-3" />
-                    </Link>
+                  <div className="text-[11px] text-asphalt-muted">
+                    {c.status} • {c.category}
                   </div>
                 </div>
-              </Popup>
+              </Tooltip>
             </Marker>
           );
         })}

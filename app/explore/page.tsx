@@ -1,26 +1,24 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
-import {
-  Compass,
-  Filter,
-  Layers,
-  Loader2,
-  AlertTriangle,
-  CheckCircle2,
-  Clock,
-  ShieldCheck,
-  RefreshCw,
-} from 'lucide-react';
+import Link from 'next/link';
+import { Plus, RefreshCw, Filter, Layers, X, ChevronRight } from 'lucide-react';
+import { useTranslation } from '@/lib/i18n';
+import { Button } from '@/components/ui/Button';
+import { BottomSheet } from '@/components/ui/BottomSheet';
+import { ComplaintRow } from '@/components/ui/ComplaintRow';
+import { StatusBadge } from '@/components/ui/StatusBadge';
 
-// Dynamic import with SSR disabled to eliminate Leaflet window reference errors
+// Dynamic import of Leaflet map with SSR disabled
 const CivicLeafletMap = dynamic(() => import('@/components/CivicLeafletMap'), {
   ssr: false,
   loading: () => (
-    <div className="w-full h-[650px] rounded-3xl bg-slate-100 flex flex-col items-center justify-center border border-slate-200">
-      <Loader2 className="w-8 h-8 animate-spin text-orange-600 mb-2" />
-      <p className="text-sm font-semibold text-slate-600">Loading Bengaluru GIS Map Layers...</p>
+    <div className="w-full h-full bg-kerb flex flex-col items-center justify-center text-asphalt-muted">
+      <div className="w-8 h-8 border-2 border-asphalt border-t-marking-yellow rounded-full animate-spin mb-3" />
+      <span className="font-heading font-semibold text-xs tracking-wide">
+        Loading road and ward boundaries...
+      </span>
     </div>
   ),
 });
@@ -35,13 +33,16 @@ const CATEGORIES = [
 ];
 
 export default function ExplorePage() {
+  const { t } = useTranslation();
   const [complaints, setComplaints] = useState<any[]>([]);
   const [wards, setWards] = useState<any[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [selectedWardId, setSelectedWardId] = useState<string>('');
   const [loading, setLoading] = useState(true);
+  const [selectedComplaint, setSelectedComplaint] = useState<any | null>(null);
+  const [showLegend, setShowLegend] = useState(false);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       const res = await fetch('/api/complaints?limit=150');
@@ -63,121 +64,172 @@ export default function ExplorePage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [fetchData]);
+
+  const getCategoryLabel = (cat: string) => {
+    if (cat === 'all') return t.allCategories;
+    if (cat === 'Roads') return t.roads;
+    if (cat === 'Sanitation') return t.sanitation;
+    if (cat === 'Streetlights') return t.streetlights;
+    if (cat === 'Water Supply & Drainage') return t.waterSupplyDrainage;
+    return t.others;
+  };
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-8 sm:px-6 lg:px-8 space-y-6">
-      {/* Top Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full bg-orange-100 text-orange-800 text-xs font-bold uppercase mb-2">
-            <Compass className="w-3.5 h-3.5" />
-            <span>Greater Bengaluru Spatial Transparency</span>
-          </div>
-          <h1 className="text-3xl font-black text-slate-900 tracking-tight">
-            Live Civic Redressal Map
-          </h1>
-          <p className="text-sm text-slate-500">
-            Real-time geospatial distribution of citizen reports, active repairs, and verified resolutions.
-          </p>
-        </div>
-
-        <button
-          onClick={fetchData}
-          disabled={loading}
-          className="inline-flex items-center space-x-2 px-4 py-2.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-xs font-bold text-slate-700 shadow-sm transition"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-          <span>Refresh Map Layers</span>
-        </button>
+    <div className="relative w-full h-[calc(100vh-64px)] pb-16 md:pb-0 overflow-hidden bg-kerb">
+      {/* Full-Screen GIS Leaflet Map */}
+      <div className="absolute inset-0 w-full h-full">
+        <CivicLeafletMap
+          complaints={complaints}
+          wards={wards}
+          selectedCategory={selectedCategory}
+          selectedWardId={selectedWardId}
+          onSelectComplaint={(c) => setSelectedComplaint(c)}
+          selectedComplaintId={selectedComplaint?._id}
+        />
       </div>
 
-      {/* Filter Chips & Legend */}
-      <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm space-y-4">
-        {/* Category & Ward Filter Chips */}
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-400 mr-1 flex items-center space-x-1">
-              <Filter className="w-3.5 h-3.5" />
-              <span>Category:</span>
-            </span>
-            {CATEGORIES.map((cat) => (
-              <button
-                key={cat}
-                onClick={() => setSelectedCategory(cat)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
-                  selectedCategory === cat
-                    ? 'bg-orange-600 text-white shadow-sm shadow-orange-600/25'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                }`}
-              >
-                {cat === 'all' ? 'All Categories' : cat}
-              </button>
-            ))}
-          </div>
+      {/* Floating Top Controls Bar */}
+      <div className="absolute top-3 inset-x-3 md:top-4 md:inset-x-6 z-[1000] pointer-events-none">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
+          {/* Category & Ward Filter Bar */}
+          <div className="flex flex-wrap items-center gap-1.5 p-1.5 bg-white/95 backdrop-blur-sm rounded-control border border-border shadow-sheet pointer-events-auto overflow-x-auto max-w-full">
+            {/* Category Chips */}
+            {CATEGORIES.map((cat) => {
+              const active = selectedCategory === cat;
+              return (
+                <button
+                  key={cat}
+                  onClick={() => setSelectedCategory(cat)}
+                  className={`px-2.5 py-1 rounded-plate text-xs font-heading font-semibold transition-colors shrink-0 ${
+                    active
+                      ? 'bg-asphalt text-marking-yellow'
+                      : 'bg-kerb text-asphalt-muted hover:bg-border-subtle hover:text-asphalt'
+                  }`}
+                >
+                  {getCategoryLabel(cat)}
+                </button>
+              );
+            })}
 
-          <div className="flex items-center space-x-2">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
-              Ward Filter:
-            </span>
+            {/* Ward Selector */}
+            <div className="h-4 w-px bg-border mx-1 hidden sm:block shrink-0" />
             <select
               value={selectedWardId}
               onChange={(e) => setSelectedWardId(e.target.value)}
-              className="text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500"
+              className="px-2 py-1 bg-kerb text-asphalt text-xs font-heading font-semibold rounded-plate border border-border-subtle focus:outline-none focus:ring-1 focus:ring-signboard-blue shrink-0 cursor-pointer"
             >
-              <option value="">All Bengaluru Pilot Wards</option>
+              <option value="">{t.allWards}</option>
               {wards.map((w: any) => (
                 <option key={w._id} value={w._id}>
                   {w.name} ({w.code})
                 </option>
               ))}
             </select>
-          </div>
-        </div>
 
-        {/* Status Legend */}
-        <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between text-xs gap-3">
-          <span className="font-bold text-slate-500 uppercase tracking-wider text-[11px]">
-            Marker Status Color Code:
-          </span>
-          <div className="flex flex-wrap items-center gap-4">
-            <div className="flex items-center space-x-1.5">
-              <span className="w-3 h-3 rounded-full bg-red-500" />
-              <span className="text-slate-700 font-medium">Pending</span>
-            </div>
-            <div className="flex items-center space-x-1.5">
-              <span className="w-3 h-3 rounded-full bg-amber-500" />
-              <span className="text-slate-700 font-medium">In Progress</span>
-            </div>
-            <div className="flex items-center space-x-1.5">
-              <span className="w-3 h-3 rounded-full bg-blue-500 ring-2 ring-blue-300 ring-offset-1" />
-              <span className="text-slate-700 font-bold text-blue-900">
-                Pending Verification (120h Audit)
-              </span>
-            </div>
-            <div className="flex items-center space-x-1.5">
-              <span className="w-3 h-3 rounded-full bg-emerald-500" />
-              <span className="text-slate-700 font-medium">Resolved (Audited)</span>
-            </div>
-            <div className="flex items-center space-x-1.5">
-              <span className="w-3 h-3 rounded-full bg-purple-500" />
-              <span className="text-slate-700 font-medium">Reopened / Disputed</span>
-            </div>
+            {/* Refresh Button */}
+            <button
+              onClick={fetchData}
+              disabled={loading}
+              title="Refresh Map"
+              className="p-1 rounded-plate text-asphalt-muted hover:text-asphalt hover:bg-kerb transition"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
+
+          {/* Yellow Primary Action Button: Report a Problem */}
+          <div className="pointer-events-auto shrink-0 self-end sm:self-auto">
+            <Link href="/report">
+              <Button variant="primary" size="sm" className="shadow-sheet flex items-center gap-1.5">
+                <Plus className="w-4 h-4 stroke-[2.5]" />
+                <span>{t.reportProblem}</span>
+              </Button>
+            </Link>
           </div>
         </div>
       </div>
 
-      {/* Map Display */}
-      <CivicLeafletMap
-        complaints={complaints}
-        wards={wards}
-        selectedCategory={selectedCategory}
-        selectedWardId={selectedWardId}
-      />
+      {/* Floating Bottom Left Legend Trigger / Tray */}
+      <div className="absolute bottom-20 md:bottom-6 left-3 md:left-6 z-[1000]">
+        {!showLegend ? (
+          <button
+            onClick={() => setShowLegend(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-white/95 rounded-plate border border-border shadow-sheet text-xs font-heading font-semibold text-asphalt hover:bg-kerb"
+          >
+            <Layers className="w-3.5 h-3.5 text-signboard-blue" />
+            <span>Map Legend</span>
+          </button>
+        ) : (
+          <div className="p-3 bg-white/95 backdrop-blur-sm rounded-control border border-border shadow-sheet max-w-xs space-y-2 text-xs">
+            <div className="flex items-center justify-between pb-1.5 border-b border-border">
+              <span className="font-heading font-bold text-asphalt">Marker Status Code</span>
+              <button
+                onClick={() => setShowLegend(false)}
+                className="text-asphalt-muted hover:text-asphalt"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-[11px] font-sans">
+              <div className="flex items-center gap-1.5">
+                <span className="w-3 h-3 rounded-full bg-alert-red border border-white shrink-0" />
+                <span className="text-asphalt">Pending</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="w-3 h-3 rounded-plate bg-marking-yellow border border-asphalt shrink-0" />
+                <span className="text-asphalt">In Progress</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="w-3 h-3 rounded-plate rotate-45 bg-signboard-blue border border-white shrink-0" />
+                <span className="text-asphalt">Pending Audit</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="w-3 h-3 rounded-plate bg-fixed-green border border-white shrink-0" />
+                <span className="text-asphalt">Resolved</span>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Tapped Marker Bottom Sheet with ComplaintRow */}
+      <BottomSheet
+        isOpen={Boolean(selectedComplaint)}
+        onClose={() => setSelectedComplaint(null)}
+        title={selectedComplaint?.category || 'Issue summary'}
+      >
+        {selectedComplaint && (
+          <div className="space-y-4">
+            <ComplaintRow
+              id={selectedComplaint._id}
+              title={selectedComplaint.title}
+              category={selectedComplaint.category}
+              address={selectedComplaint.address || selectedComplaint.wardId?.name}
+              status={selectedComplaint.status}
+              upvotesCount={selectedComplaint.upvotesCount || 0}
+              imageUrl={selectedComplaint.resolutionImageUrl || selectedComplaint.imageUrl}
+            />
+
+            <div className="pt-2 flex items-center justify-between border-t border-border">
+              <div className="text-xs text-asphalt-muted">
+                {selectedComplaint.wardId?.name} ({selectedComplaint.wardId?.code})
+              </div>
+
+              <Link href={`/complaints/${selectedComplaint._id}`}>
+                <Button variant="primary" size="sm" className="flex items-center gap-1">
+                  <span>{t.viewDetails}</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </Button>
+              </Link>
+            </div>
+          </div>
+        )}
+      </BottomSheet>
     </div>
   );
 }

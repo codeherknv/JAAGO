@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { ThumbsUp, MapPin } from 'lucide-react';
@@ -38,13 +38,14 @@ export function ComplaintRow({
   showSupportAction = true,
 }: ComplaintRowProps) {
   const { t } = useTranslation();
+  const [imgError, setImgError] = useState(false);
 
   return (
     <div className="group relative bg-white border-b border-border py-3.5 px-4 transition-colors hover:bg-kerb/50">
       <div className="flex items-start gap-3">
         {/* Thumbnail */}
         <Link href={`/complaints/${id}`} className="shrink-0 relative w-14 h-14 bg-kerb rounded-control overflow-hidden border border-border">
-          {imageUrl ? (
+          {imageUrl && !imgError ? (
             <Image
               src={imageUrl}
               alt={title}
@@ -52,6 +53,7 @@ export function ComplaintRow({
               sizes="56px"
               className="object-cover"
               unoptimized={imageUrl.startsWith('data:')}
+              onError={() => setImgError(true)}
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-asphalt-subtle bg-kerb">

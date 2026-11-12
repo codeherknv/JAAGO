@@ -3,7 +3,8 @@
 import React, { useState } from 'react';
 import { signIn } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { Shield, UserCheck, User, Sparkles, AlertCircle } from 'lucide-react';
+import { Shield, User, Wrench, AlertCircle, ArrowRight } from 'lucide-react';
+import { Button } from '@/components/ui/Button';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -36,162 +37,147 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-[85vh] flex items-center justify-center px-4 py-12">
-      <div className="max-w-md w-full space-y-8 bg-white p-8 rounded-2xl shadow-xl border border-slate-100">
-        <div className="text-center">
-          <div className="w-12 h-12 bg-gradient-to-tr from-amber-500 to-orange-600 rounded-2xl mx-auto flex items-center justify-center text-white text-2xl font-black shadow-lg shadow-orange-500/20">
-            जा
+    <div className="min-h-[85vh] flex items-center justify-center px-4 py-12 bg-kerb">
+      <div className="max-w-md w-full space-y-6 bg-white p-6 sm:p-8 rounded-control border border-border shadow-sheet">
+        {/* Mile-Marker Logo & Heading */}
+        <div className="text-center space-y-2">
+          <div className="inline-flex items-center justify-center w-12 h-12 rounded-control bg-marking-yellow border-2 border-asphalt text-asphalt font-heading font-black text-xl shadow-sm">
+            JG
           </div>
-          <h2 className="mt-4 text-2xl font-bold tracking-tight text-slate-900">
-            Sign in to Jaago
-          </h2>
-          <p className="mt-1 text-sm text-slate-500">
-            Greater Bengaluru Pilot Identity & Access Portal
+          <h1 className="text-2xl font-heading font-black text-asphalt tracking-tight">
+            Sign In to Jaago
+          </h1>
+          <p className="text-xs font-sans text-asphalt-muted">
+            Greater Bengaluru Municipal Redressal &amp; Field Portal
           </p>
         </div>
 
         {error && (
-          <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs flex items-center space-x-2">
+          <div className="p-3 rounded-plate bg-alert-red/10 border border-alert-red/30 text-alert-red text-xs font-sans flex items-center gap-2">
             <AlertCircle className="w-4 h-4 shrink-0" />
             <span>{error}</span>
           </div>
         )}
 
         {/* 1-Click Demo Profiles */}
-        <div className="space-y-3">
-          <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-            1-Click Demo Test Personas
-          </p>
+        <div className="space-y-2.5">
+          <span className="text-[11px] font-heading font-bold uppercase tracking-wider text-asphalt-muted block">
+            1-Click Demo Personas
+          </span>
 
+          {/* Officer Persona */}
           <button
             onClick={() => handleSignIn('officer.bellandur@demo.jaago.app')}
             disabled={loading}
-            className="w-full flex items-center justify-between p-3 rounded-xl border border-emerald-200 bg-emerald-50/50 hover:bg-emerald-50 text-left transition"
+            className="w-full flex items-center justify-between p-3 rounded-control border border-border bg-kerb hover:bg-border-subtle text-left transition"
           >
-            <div className="flex items-center space-x-3">
-              <div className="w-9 h-9 rounded-lg bg-emerald-600 text-white flex items-center justify-center font-bold text-xs">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-plate bg-asphalt text-marking-yellow flex items-center justify-center font-heading font-bold text-xs">
                 AEE
               </div>
               <div>
-                <p className="text-sm font-semibold text-slate-900">Ramesh Gowda</p>
-                <p className="text-xs text-emerald-700 font-medium">
-                  Ward Officer &bull; Bellandur (W-150)
+                <p className="text-xs font-heading font-bold text-asphalt">Ramesh Gowda</p>
+                <p className="text-[11px] font-sans text-asphalt-muted">
+                  Ward Officer • Bellandur (W-150)
                 </p>
               </div>
             </div>
-            <span className="text-xs font-semibold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded">
+            <span className="text-[10px] font-heading font-bold px-2 py-0.5 rounded-plate bg-signboard-blue/10 text-signboard-blue border border-signboard-blue/30">
               Officer
             </span>
           </button>
 
-          <button
-            onClick={() => handleSignIn('officer.hsr@demo.jaago.app')}
-            disabled={loading}
-            className="w-full flex items-center justify-between p-3 rounded-xl border border-teal-200 bg-teal-50/50 hover:bg-teal-50 text-left transition"
-          >
-            <div className="flex items-center space-x-3">
-              <div className="w-9 h-9 rounded-lg bg-teal-600 text-white flex items-center justify-center font-bold text-xs">
-                HI
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-slate-900">Sunita Rao</p>
-                <p className="text-xs text-teal-700 font-medium">
-                  Health Inspector &bull; HSR Layout (W-174)
-                </p>
-              </div>
-            </div>
-            <span className="text-xs font-semibold text-teal-800 bg-teal-100 px-2 py-0.5 rounded">
-              Officer
-            </span>
-          </button>
-
+          {/* Citizen Persona */}
           <button
             onClick={() => handleSignIn('citizen.rahul@demo.jaago.app')}
             disabled={loading}
-            className="w-full flex items-center justify-between p-3 rounded-xl border border-blue-200 bg-blue-50/50 hover:bg-blue-50 text-left transition"
+            className="w-full flex items-center justify-between p-3 rounded-control border border-border bg-kerb hover:bg-border-subtle text-left transition"
           >
-            <div className="flex items-center space-x-3">
-              <div className="w-9 h-9 rounded-lg bg-blue-600 text-white flex items-center justify-center">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-plate bg-asphalt text-white flex items-center justify-center">
                 <User className="w-4 h-4" />
               </div>
               <div>
-                <p className="text-sm font-semibold text-slate-900">Rahul Sharma</p>
-                <p className="text-xs text-blue-700 font-medium">Resident &bull; Bellandur</p>
+                <p className="text-xs font-heading font-bold text-asphalt">Rahul Sharma</p>
+                <p className="text-[11px] font-sans text-asphalt-muted">Resident • Bellandur</p>
               </div>
             </div>
-            <span className="text-xs font-semibold text-blue-800 bg-blue-100 px-2 py-0.5 rounded">
+            <span className="text-[10px] font-heading font-bold px-2 py-0.5 rounded-plate bg-kerb text-asphalt border border-border">
               Citizen
             </span>
           </button>
 
+          {/* Admin Persona */}
           <button
             onClick={() => handleSignIn('admin@demo.jaago.app')}
             disabled={loading}
-            className="w-full flex items-center justify-between p-3 rounded-xl border border-purple-200 bg-purple-50/50 hover:bg-purple-50 text-left transition"
+            className="w-full flex items-center justify-between p-3 rounded-control border border-border bg-kerb hover:bg-border-subtle text-left transition"
           >
-            <div className="flex items-center space-x-3">
-              <div className="w-9 h-9 rounded-lg bg-purple-600 text-white flex items-center justify-center">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-plate bg-asphalt text-marking-yellow flex items-center justify-center">
                 <Shield className="w-4 h-4" />
               </div>
               <div>
-                <p className="text-sm font-semibold text-slate-900">Civic Commissioner</p>
-                <p className="text-xs text-purple-700 font-medium">Municipal Oversight & Audit</p>
+                <p className="text-xs font-heading font-bold text-asphalt">Municipal Admin</p>
+                <p className="text-[11px] font-sans text-asphalt-muted">Control Center &amp; Triage</p>
               </div>
             </div>
-            <span className="text-xs font-semibold text-purple-800 bg-purple-100 px-2 py-0.5 rounded">
+            <span className="text-[10px] font-heading font-bold px-2 py-0.5 rounded-plate bg-asphalt text-marking-yellow">
               Admin
             </span>
           </button>
         </div>
 
-        <div className="relative my-4">
+        {/* Divider */}
+        <div className="relative my-3">
           <div className="absolute inset-0 flex items-center">
-            <div className="w-full border-t border-slate-200" />
+            <div className="w-full border-t border-border" />
           </div>
-          <div className="relative flex justify-center text-xs uppercase">
-            <span className="bg-white px-2 text-slate-400 font-medium">
-              Or sign in with custom credentials
+          <div className="relative flex justify-center text-[11px] uppercase">
+            <span className="bg-white px-2 font-heading font-semibold text-asphalt-muted">
+              Or sign in with email
             </span>
           </div>
         </div>
 
+        {/* Custom Credentials Form */}
         <form
           onSubmit={(e) => {
             e.preventDefault();
             handleSignIn(email, password);
           }}
-          className="space-y-4"
+          className="space-y-3"
         >
           <div>
-            <label className="block text-xs font-medium text-slate-700">Email Address</label>
+            <label className="block text-xs font-heading font-bold text-asphalt mb-1">
+              Email Address
+            </label>
             <input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="e.g. resident@gmail.com"
-              className="mt-1 block w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
+              placeholder="e.g. resident@example.com"
+              className="w-full px-3 py-2 border border-border rounded-plate text-xs font-sans text-asphalt bg-white focus:outline-none focus:ring-1 focus:ring-signboard-blue"
               required
             />
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-slate-700">Password</label>
+            <label className="block text-xs font-heading font-bold text-asphalt mb-1">
+              Password
+            </label>
             <input
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="mt-1 block w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
+              className="w-full px-3 py-2 border border-border rounded-plate text-xs font-sans text-asphalt bg-white focus:outline-none focus:ring-1 focus:ring-signboard-blue"
               required
             />
           </div>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full py-2.5 px-4 rounded-xl bg-orange-600 text-white font-semibold text-sm hover:bg-orange-700 shadow-sm transition disabled:opacity-50"
-          >
+          <Button type="submit" variant="primary" className="w-full" disabled={loading}>
             {loading ? 'Authenticating...' : 'Sign In'}
-          </button>
+          </Button>
         </form>
       </div>
     </div>

@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import Link from 'next/link';
 import { MapPin, AlertCircle } from 'lucide-react';
 import { Button } from './Button';
 
@@ -8,6 +9,7 @@ export interface EmptyStateProps {
   title: string;
   description?: string;
   actionLabel?: string;
+  actionHref?: string;
   onAction?: () => void;
   icon?: React.ReactNode;
 }
@@ -16,6 +18,7 @@ export function EmptyState({
   title,
   description,
   actionLabel,
+  actionHref,
   onAction,
   icon,
 }: EmptyStateProps) {
@@ -35,7 +38,17 @@ export function EmptyState({
         </p>
       )}
 
-      {actionLabel && onAction && (
+      {actionLabel && actionHref && (
+        <div className="mt-4">
+          <Link href={actionHref}>
+            <Button variant="primary" size="md">
+              {actionLabel}
+            </Button>
+          </Link>
+        </div>
+      )}
+
+      {actionLabel && onAction && !actionHref && (
         <div className="mt-4">
           <Button variant="primary" size="md" onClick={onAction}>
             {actionLabel}

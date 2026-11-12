@@ -1,37 +1,53 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
+import dynamic from 'next/dynamic';
+import Image from 'next/image';
 import Link from 'next/link';
 import {
-  ShieldCheck,
-  AlertTriangle,
-  Clock,
-  ThumbsUp,
-  MapPin,
-  CheckCircle,
+  Wrench,
   Camera,
-  PlayCircle,
-  Filter,
+  MapPin,
   RefreshCw,
   Navigation,
-  Loader2,
   AlertCircle,
   ExternalLink,
+  ChevronRight,
+  X,
+  Upload,
 } from 'lucide-react';
-import { calculateAllowedResolutionRadius } from '@/lib/geo';
+import { calculateHaversineDistance, calculateAllowedResolutionRadius } from '@/lib/geo';
 import { uploadToCloudinary } from '@/lib/cloudinaryClient';
+import { useTranslation } from '@/lib/i18n';
+import { Button } from '@/components/ui/Button';
+import { StatusBadge } from '@/components/ui/StatusBadge';
+import { BottomSheet } from '@/components/ui/BottomSheet';
+import { EmptyState } from '@/components/ui/EmptyState';
+
+// Dynamic import of Leaflet map
+const CivicLeafletMap = dynamic(() => import('@/components/CivicLeafletMap'), {
+  ssr: false,
+  loading: () => (
+    <div className="w-full h-full bg-kerb flex flex-col items-center justify-center text-asphalt-muted">
+      <div className="w-8 h-8 border-2 border-asphalt border-t-marking-yellow rounded-full animate-spin mb-2" />
+      <span className="font-heading font-semibold text-xs">Loading GIS map...</span>
+    </div>
+  ),
+});
 
 export default function OfficerDashboardPage() {
   const { data: session } = useSession();
+  const { t } = useTranslation();
 
   const [complaints, setComplaints] = useState<any[]>([]);
   const [wards, setWards] = useState<any[]>([]);
   const [selectedWardId, setSelectedWardId] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [loading, setLoading] = useState(true);
+  const [selectedComplaint, setSelectedComplaint] = useState<any | null>(null);
 
-  // Resolution Modal State
+  // Resolution Sheet State
   const [resolvingComplaint, setResolvingComplaint] = useState<any | null>(null);
   const [officerGPS, setOfficerGPS] = useState<{ lat: number; lng: number; accuracy: number } | null>(null);
   const [gpsLoading, setGpsLoading] = useState(false);
@@ -41,19 +57,23 @@ export default function OfficerDashboardPage() {
   const [submittingResolution, setSubmittingResolution] = useState(false);
   const [resolutionError, setResolutionError] = useState<string | null>(null);
 
+  // Camera stream state
+  const [isCameraActive, setIsCameraActive] = useState(false);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Initialize selected ward from session or pilot
+  // Initialize selected ward from session
   useEffect(() => {
     if (session?.user?.assignedWardId) {
       setSelectedWardId(session.user.assignedWardId);
     }
   }, [session]);
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      // 1. Fetch complaints
       let url = '/api/complaints?limit=100';
       if (selectedWardId) {
         url += `&wardId=${selectedWardId}`;
@@ -64,13 +84,12 @@ export default function OfficerDashboardPage() {
 
       const res = await fetch(url);
       const data = await res.json();
-      // Exclude unassigned/unrouted complaints from officer views (handled exclusively in admin triage)
       const validComplaints = (data.complaints || []).filter(
         (c: any) => c.wardId && (c.wardId._id || typeof c.wardId === 'string')
       );
       setComplaints(validComplaints);
 
-      // 2. Extract unique wards for filter
+      // Extract unique wards for filter
       const allComplaintsRes = await fetch('/api/complaints?limit=100');
       const allData = await allComplaintsRes.json();
       const wardMap = new Map();
@@ -85,11 +104,11 @@ export default function OfficerDashboardPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedWardId, selectedCategory]);
 
   useEffect(() => {
     loadData();
-  }, [selectedWardId, selectedCategory]);
+  }, [loadData]);
 
   // Handle Status change: Pending -> In Progress
   const handleStartWork = async (complaintId: string) => {
@@ -99,7 +118,7 @@ export default function OfficerDashboardPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           status: 'In Progress',
-          remarks: 'Field engineer assigned and repair materials dispatched.',
+          remarks: 'Field engineer assigned and work initiated on site.',
         }),
       });
       if (res.ok) {
@@ -110,6 +129,50 @@ export default function OfficerDashboardPage() {
       }
     } catch (err: any) {
       alert(err.message);
+    }
+  };
+
+  // Start Camera Stream
+  const startCamera = async () => {
+    setCameraError(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: false,
+      });
+      mediaStreamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.play();
+      }
+      setIsCameraActive(true);
+    } catch (err: any) {
+      setCameraError('Camera access unavailable. Use file upload fallback.');
+      setIsCameraActive(false);
+    }
+  };
+
+  // Stop Camera Stream
+  const stopCamera = () => {
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+      mediaStreamRef.current = null;
+    }
+    setIsCameraActive(false);
+  };
+
+  // Capture Photo from Camera Stream
+  const capturePhoto = () => {
+    if (!videoRef.current) return;
+    const canvas = document.createElement('canvas');
+    canvas.width = videoRef.current.videoWidth || 640;
+    canvas.height = videoRef.current.videoHeight || 480;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+      const dataUri = canvas.toDataURL('image/jpeg', 0.85);
+      setResolutionPreview(dataUri);
+      stopCamera();
     }
   };
 
@@ -141,8 +204,7 @@ export default function OfficerDashboardPage() {
   const handleSimulateOnSite = () => {
     if (!resolvingComplaint) return;
     const [cLng, cLat] = resolvingComplaint.location.coordinates;
-    // Add minor 8m jitter
-    const jitterLat = cLat + 0.00007;
+    const jitterLat = cLat + 0.00007; // ~8m away
     const jitterLng = cLng + 0.00007;
     setOfficerGPS({
       lat: jitterLat,
@@ -151,8 +213,8 @@ export default function OfficerDashboardPage() {
     });
   };
 
-  // Handle Photo selection for resolution
-  const handlePhotoCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle Photo selection from desktop file input
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       setResolutionFile(file);
@@ -174,7 +236,7 @@ export default function OfficerDashboardPage() {
       return;
     }
     if (!resolutionPreview) {
-      setResolutionError('Live photographic proof of completed work is required.');
+      setResolutionError('Photographic proof of completed work is required.');
       return;
     }
 
@@ -193,12 +255,11 @@ export default function OfficerDashboardPage() {
           lng: officerGPS.lng,
           accuracy: officerGPS.accuracy,
           resolutionImageUrl: finalImageUrl,
-          remarks: resolutionRemarks || 'Field work executed and inspected.',
+          remarks: resolutionRemarks || 'Field work executed and inspected on site.',
         }),
       });
 
       const data = await res.json();
-
       if (!res.ok) {
         throw new Error(data.error || 'Resolution verification rejected');
       }
@@ -207,6 +268,7 @@ export default function OfficerDashboardPage() {
       setResolutionPreview(null);
       setOfficerGPS(null);
       setResolutionRemarks('');
+      stopCamera();
       loadData();
     } catch (err: any) {
       setResolutionError(err.message || 'Verification rejected');
@@ -215,373 +277,395 @@ export default function OfficerDashboardPage() {
     }
   };
 
+  // Distance calculation helper
+  const getGpsDistanceReadout = () => {
+    if (!officerGPS || !resolvingComplaint) return null;
+    const [cLng, cLat] = resolvingComplaint.location.coordinates;
+    const dist = Math.round(
+      calculateHaversineDistance(officerGPS.lat, officerGPS.lng, cLat, cLng)
+    );
+    const maxAllowed = calculateAllowedResolutionRadius(officerGPS.accuracy);
+    const isNearby = dist <= maxAllowed;
+
+    return {
+      dist,
+      accuracy: officerGPS.accuracy,
+      maxAllowed,
+      isNearby,
+    };
+  };
+
+  const gpsReadout = getGpsDistanceReadout();
+
+  const getDaysOpen = (createdAt: string) => {
+    const hours = Math.round((Date.now() - new Date(createdAt).getTime()) / (3600 * 1000));
+    if (hours < 24) return `${hours}h open`;
+    const days = Math.floor(hours / 24);
+    return `${days}d open`;
+  };
+
   return (
-    <div className="max-w-7xl mx-auto px-4 py-8 sm:px-6 lg:px-8 space-y-8">
-      {/* Header banner */}
-      <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 text-white rounded-3xl p-6 sm:p-8 shadow-xl">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="space-y-2">
-            <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-bold uppercase border border-emerald-500/30">
-              <ShieldCheck className="w-3.5 h-3.5" />
-              <span>Municipal Field Command & Dispatch</span>
+    <div className="w-full bg-kerb min-h-[calc(100vh-64px)] pb-20 md:pb-8">
+      {/* Top Header Plate */}
+      <div className="bg-white border-b border-border py-4 px-4 sm:px-6">
+        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="px-2 py-0.5 rounded-plate bg-signboard-blue text-white text-[11px] font-heading font-bold">
+                Field Operations
+              </span>
+              <span className="text-xs text-asphalt-muted font-sans">
+                {session?.user?.name || 'Field Officer'} ({session?.user?.assignedWardId ? 'Ward Assigned' : 'Unassigned'})
+              </span>
             </div>
-            <h1 className="text-3xl font-black tracking-tight">Officer Resolution Dashboard</h1>
-            <p className="text-sm text-slate-300 max-w-2xl leading-relaxed">
-              Prioritized by Civic Urgency Score. Resolutions require verified live camera proof and GPS lock within allowed radius.
-            </p>
+            <h1 className="text-xl sm:text-2xl font-heading font-black text-asphalt">
+              Officer Priority Queue
+            </h1>
           </div>
 
-          <div className="flex flex-col sm:flex-row gap-3">
-            <div className="bg-white/10 backdrop-blur-md px-4 py-3 rounded-2xl border border-white/15">
-              <span className="text-[10px] uppercase font-bold text-slate-400 block">Logged In As</span>
-              <span className="text-xs font-bold text-white">
-                {session?.user?.name || 'Ramesh Gowda (AEE)'}
-              </span>
-              <span className="block text-[11px] text-emerald-400 font-semibold">
-                Role: {session?.user?.role || 'officer'}
-              </span>
-            </div>
+          <div className="flex items-center gap-2">
+            <select
+              value={selectedCategory}
+              onChange={(e) => setSelectedCategory(e.target.value)}
+              className="px-2.5 py-1.5 text-xs font-heading font-semibold bg-kerb border border-border rounded-plate text-asphalt"
+            >
+              <option value="all">All Categories</option>
+              <option value="Roads">Roads</option>
+              <option value="Sanitation">Sanitation</option>
+              <option value="Streetlights">Streetlights</option>
+              <option value="Water Supply & Drainage">Water & Drainage</option>
+              <option value="Others">Others</option>
+            </select>
+
+            <Button variant="secondary" size="sm" onClick={loadData} disabled={loading}>
+              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+            </Button>
           </div>
         </div>
       </div>
 
-      {/* Ward Filter & Status Chips */}
-      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex flex-wrap items-center gap-3">
-          <span className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center space-x-1.5">
-            <Filter className="w-3.5 h-3.5" />
-            <span>Ward View:</span>
-          </span>
+      {/* Main Responsive Grid: Desktop Left List + Right Map; Mobile Stacked */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          {/* Left Column: Priority List (7 Cols on LG) */}
+          <div className="lg:col-span-7 space-y-3">
+            <div className="flex items-center justify-between px-1 text-xs text-asphalt-muted font-heading font-semibold">
+              <span>{complaints.length} tickets in queue</span>
+              <span>Sorted by civic urgency</span>
+            </div>
 
-          <select
-            value={selectedWardId}
-            onChange={(e) => setSelectedWardId(e.target.value)}
-            className="text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500"
-          >
-            <option value="">All Pilot Wards</option>
-            {wards.map((w: any) => (
-              <option key={w._id} value={w._id}>
-                {w.name} ({w.code})
-              </option>
-            ))}
-          </select>
+            {complaints.length === 0 ? (
+              <EmptyState
+                title="No complaints in queue"
+                description="All reported civic issues in this jurisdiction have been resolved or routed."
+              />
+            ) : (
+              <div className="bg-white border border-border rounded-control divide-y divide-border overflow-hidden">
+                {complaints.map((c) => {
+                  const isPending = c.status === 'Pending';
+                  const isInProgress = c.status === 'In Progress';
+                  const isResolvable = isPending || isInProgress;
 
-          <select
-            value={selectedCategory}
-            onChange={(e) => setSelectedCategory(e.target.value)}
-            className="text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500"
-          >
-            <option value="all">All Categories</option>
-            <option value="Roads">Roads</option>
-            <option value="Sanitation">Sanitation</option>
-            <option value="Water Supply & Drainage">Water Supply & Drainage</option>
-            <option value="Streetlights">Streetlights</option>
-            <option value="Others">Others</option>
-          </select>
-        </div>
+                  return (
+                    <div
+                      key={c._id}
+                      className={`p-4 transition hover:bg-kerb/40 ${
+                        selectedComplaint?._id === c._id ? 'bg-marking-yellow/10' : ''
+                      }`}
+                      onClick={() => setSelectedComplaint(c)}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="space-y-1 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <StatusBadge status={c.status} />
+                            <span className="px-1.5 py-0.5 rounded-plate bg-kerb text-[11px] font-heading font-semibold text-asphalt border border-border">
+                              {c.category}
+                            </span>
+                            <span className="text-[11px] font-mono font-bold text-signboard-blue bg-signboard-blue/10 px-1.5 py-0.5 rounded-plate">
+                              P: {c.priorityScore ? c.priorityScore.toFixed(1) : '10.0'}
+                            </span>
+                            <span className="text-[11px] text-asphalt-muted">
+                              {getDaysOpen(c.createdAt)}
+                            </span>
+                          </div>
 
-        <button
-          onClick={loadData}
-          className="inline-flex items-center space-x-1.5 text-xs font-bold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-3.5 py-2 rounded-xl transition"
-        >
-          <RefreshCw className="w-3.5 h-3.5" />
-          <span>Refresh Queue</span>
-        </button>
-      </div>
+                          <h3 className="font-heading font-bold text-sm text-asphalt pt-0.5">
+                            {c.title}
+                          </h3>
+                          <p className="text-xs text-asphalt-muted line-clamp-1 font-sans">
+                            {c.address || c.wardId?.name}
+                          </p>
+                        </div>
 
-      {/* Complaints Queue Table / Grid */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-base font-extrabold text-slate-900">
-            Active Civic Queue ({complaints.length} tickets) &bull; Ordered by Dynamic Priority Score
-          </h2>
-          <span className="text-xs text-slate-500 hidden sm:inline">
-            Priority = (Weight &times; 2) + (Upvotes &times; 1.5) + (Hours / 24) + (Reopens &times; 5)
-          </span>
-        </div>
+                        {/* Action buttons */}
+                        <div className="shrink-0 flex flex-col gap-1.5 items-end">
+                          {isPending && (
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleStartWork(c._id);
+                              }}
+                            >
+                              <Wrench className="w-3.5 h-3.5" />
+                              <span>Start Work</span>
+                            </Button>
+                          )}
 
-        {loading ? (
-          <div className="p-12 text-center bg-white rounded-3xl border border-slate-200">
-            <Loader2 className="w-8 h-8 animate-spin text-orange-600 mx-auto mb-2" />
-            <p className="text-sm font-semibold text-slate-600">Sorting complaints by priority...</p>
-          </div>
-        ) : complaints.length === 0 ? (
-          <div className="p-12 text-center bg-white rounded-3xl border border-slate-200 space-y-2">
-            <CheckCircle className="w-10 h-10 text-emerald-500 mx-auto" />
-            <p className="text-base font-bold text-slate-800">No open tickets in this selection</p>
-            <p className="text-xs text-slate-500">All registered issues in this ward have been resolved.</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 gap-4">
-            {complaints.map((c) => {
-              const isOpen = ['Pending', 'In Progress', 'Reopened - Escalated'].includes(c.status);
-              return (
-                <div
-                  key={c._id}
-                  className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm hover:shadow-md transition-shadow flex flex-col md:flex-row gap-5 items-start md:items-center justify-between"
-                >
-                  <div className="flex gap-4 items-start flex-1 min-w-0">
-                    <img
-                      src={c.imageUrl}
-                      alt={c.title}
-                      className="w-24 h-24 rounded-xl object-cover shrink-0 border border-slate-200 bg-slate-100"
-                    />
-                    <div className="space-y-1.5 min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-[11px] font-black px-2 py-0.5 rounded-full bg-slate-900 text-white shadow-xs">
-                          Score: {c.priorityScore?.toFixed(1) || '0.0'}
-                        </span>
-                        <span
-                          className={`text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md ${
-                            c.status === 'Pending'
-                              ? 'bg-red-100 text-red-800'
-                              : c.status === 'In Progress'
-                              ? 'bg-amber-100 text-amber-800'
-                              : c.status === 'Pending Verification'
-                              ? 'bg-blue-100 text-blue-800'
-                              : c.status === 'Reopened - Escalated'
-                              ? 'bg-purple-100 text-purple-800'
-                              : 'bg-emerald-100 text-emerald-800'
-                          }`}
-                        >
-                          {c.status}
-                        </span>
-                        <span className="text-xs font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded">
-                          {c.category}
-                        </span>
-                        {c.reopenCount > 0 && (
-                          <span className="text-xs font-bold text-rose-700 bg-rose-50 px-2 py-0.5 rounded border border-rose-200">
-                            Disputes: {c.reopenCount}
-                          </span>
-                        )}
-                      </div>
+                          {isInProgress && (
+                            <Button
+                              variant="primary"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setResolvingComplaint(c);
+                                setOfficerGPS(null);
+                                setResolutionPreview(null);
+                              }}
+                            >
+                              <Camera className="w-3.5 h-3.5" />
+                              <span>Resolve</span>
+                            </Button>
+                          )}
 
-                      <h3 className="text-base font-bold text-slate-900 leading-snug line-clamp-1">
-                        {c.title}
-                      </h3>
-
-                      <p className="text-xs text-slate-500 flex items-center space-x-1 truncate">
-                        <MapPin className="w-3.5 h-3.5 shrink-0 text-slate-400" />
-                        <span className="truncate">{c.address}</span>
-                        <span>&bull;</span>
-                        <span className="font-semibold text-slate-700">
-                          {c.wardId?.name} ({c.wardId?.code})
-                        </span>
-                      </p>
-
-                      <div className="flex items-center space-x-3 text-xs text-slate-500 pt-1">
-                        <span className="font-bold text-orange-600 flex items-center space-x-1">
-                          <ThumbsUp className="w-3.5 h-3.5" />
-                          <span>{c.upvotesCount} upvotes</span>
-                        </span>
-                        <span>&bull;</span>
-                        <span>Reported {new Date(c.createdAt).toLocaleDateString()}</span>
+                          <Link
+                            href={`/complaints/${c._id}`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="text-[11px] font-heading font-semibold text-signboard-blue hover:underline flex items-center gap-0.5"
+                          >
+                            <span>Details</span>
+                            <ChevronRight className="w-3 h-3" />
+                          </Link>
+                        </div>
                       </div>
                     </div>
-                  </div>
-
-                  {/* Actions */}
-                  <div className="flex flex-wrap sm:flex-nowrap items-center gap-2.5 w-full md:w-auto shrink-0 justify-end pt-3 md:pt-0 border-t md:border-t-0 border-slate-100">
-                    <Link
-                      href={`/complaints/${c._id}`}
-                      className="px-3.5 py-2 rounded-xl text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 transition flex items-center space-x-1"
-                    >
-                      <ExternalLink className="w-3.5 h-3.5" />
-                      <span>Details</span>
-                    </Link>
-
-                    {c.status === 'Pending' && (
-                      <button
-                        onClick={() => handleStartWork(c._id)}
-                        className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 shadow-sm shadow-amber-600/20 transition flex items-center space-x-1.5"
-                      >
-                        <PlayCircle className="w-4 h-4" />
-                        <span>Start Work</span>
-                      </button>
-                    )}
-
-                    {isOpen && (
-                      <button
-                        onClick={() => {
-                          setResolvingComplaint(c);
-                          setResolutionError(null);
-                        }}
-                        className="px-4 py-2 rounded-xl text-xs font-black text-white bg-emerald-600 hover:bg-emerald-700 shadow-md shadow-emerald-600/25 transition flex items-center space-x-1.5"
-                      >
-                        <ShieldCheck className="w-4 h-4" />
-                        <span>Mark Resolved (GPS Lock)</span>
-                      </button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* Resolution Modal with GPS Verification Enforced */}
-      {resolvingComplaint && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-3xl max-w-xl w-full p-6 sm:p-8 space-y-6 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-200">
-            <div className="border-b border-slate-100 pb-4">
-              <div className="inline-flex items-center space-x-1 text-xs font-black text-emerald-700 bg-emerald-100 px-3 py-1 rounded-full uppercase mb-2">
-                <span>Invariant 4</span>
-                <span>&bull;</span>
-                <span>Location-Verified Resolution</span>
-              </div>
-              <h3 className="text-xl font-black text-slate-900">
-                Verify & Resolve Field Ticket
-              </h3>
-              <p className="text-xs text-slate-500 mt-1 line-clamp-1">
-                Target: {resolvingComplaint.title} ({resolvingComplaint.wardId?.name})
-              </p>
-            </div>
-
-            {resolutionError && (
-              <div className="p-4 rounded-2xl bg-red-50 border border-red-200 text-red-900 text-xs flex items-start space-x-3">
-                <AlertCircle className="w-5 h-5 shrink-0 text-red-600 mt-0.5" />
-                <div>
-                  <p className="font-bold">Resolution Rejected by Spatial Gatekeeper</p>
-                  <p className="mt-1 leading-relaxed">{resolutionError}</p>
-                </div>
+                  );
+                })}
               </div>
             )}
+          </div>
 
-            <form onSubmit={handleSubmitResolution} className="space-y-5">
-              {/* Step 1: Officer GPS Acquisition */}
-              <div className="space-y-2 p-4 rounded-2xl bg-slate-50 border border-slate-200">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-bold text-slate-800 flex items-center space-x-1.5">
-                    <Navigation className="w-3.5 h-3.5 text-blue-600" />
-                    <span>Officer Geolocation (Live Device GPS)</span>
-                  </label>
-                  {officerGPS && (
-                    <span className="text-[11px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded">
-                      Accuracy: ±{officerGPS.accuracy}m | Allowed: &le;{' '}
-                      {calculateAllowedResolutionRadius(officerGPS.accuracy)}m
-                    </span>
-                  )}
-                </div>
+          {/* Right Column: GIS Ward Map (5 Cols on LG, sticky desktop) */}
+          <div className="lg:col-span-5 sticky top-20">
+            <div className="bg-white border border-border rounded-control p-3 space-y-2">
+              <div className="flex items-center justify-between text-xs font-heading font-bold text-asphalt">
+                <span>Jurisdiction Map</span>
+                <span className="text-[11px] font-normal text-asphalt-muted">
+                  Tap marker to select ticket
+                </span>
+              </div>
+              <div className="h-[420px] rounded-control overflow-hidden border border-border">
+                <CivicLeafletMap
+                  complaints={complaints}
+                  wards={wards}
+                  selectedCategory={selectedCategory}
+                  selectedWardId={selectedWardId}
+                  onSelectComplaint={(c) => setSelectedComplaint(c)}
+                  selectedComplaintId={selectedComplaint?._id}
+                  heightClass="h-full"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
 
-                <div className="flex gap-2">
-                  <button
+      {/* Resolution Bottom Sheet Flow */}
+      <BottomSheet
+        isOpen={Boolean(resolvingComplaint)}
+        onClose={() => {
+          stopCamera();
+          setResolvingComplaint(null);
+        }}
+        title="Field Resolution Verification"
+      >
+        {resolvingComplaint && (
+          <form onSubmit={handleSubmitResolution} className="space-y-4">
+            <div>
+              <span className="text-xs font-heading font-semibold text-asphalt-muted">
+                Resolving complaint:
+              </span>
+              <h4 className="font-heading font-bold text-sm text-asphalt">
+                {resolvingComplaint.title}
+              </h4>
+              <p className="text-xs text-asphalt-muted">{resolvingComplaint.address}</p>
+            </div>
+
+            {/* GPS Physical Presence Readout */}
+            <div className="p-3 bg-kerb rounded-control border border-border space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-heading font-bold text-xs text-asphalt flex items-center gap-1.5">
+                  <MapPin className="w-4 h-4 text-signboard-blue" />
+                  <span>On-site GPS Verification</span>
+                </span>
+                <div className="flex items-center gap-1.5">
+                  <Button
                     type="button"
+                    variant="secondary"
+                    size="sm"
                     onClick={handleCaptureOfficerGPS}
                     disabled={gpsLoading}
-                    className="flex-1 py-2 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition flex items-center justify-center space-x-1.5"
                   >
-                    {gpsLoading ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <Navigation className="w-3.5 h-3.5" />
-                    )}
-                    <span>{officerGPS ? 'Re-lock Current GPS' : 'Lock Device GPS'}</span>
-                  </button>
-
+                    <Navigation className={`w-3.5 h-3.5 ${gpsLoading ? 'animate-spin' : ''}`} />
+                    <span>Get GPS</span>
+                  </Button>
                   <button
                     type="button"
                     onClick={handleSimulateOnSite}
-                    className="py-2 px-3 rounded-xl bg-blue-100 hover:bg-blue-200 text-blue-800 text-xs font-bold transition"
-                    title="Simulate on-site officer location within 10m of complaint coordinates for desktop testing"
+                    className="text-[10px] text-signboard-blue hover:underline font-heading font-medium"
                   >
-                    Simulate On-Site (Desktop Test)
+                    Simulate On-Site
                   </button>
                 </div>
+              </div>
 
-                {officerGPS && (
-                  <p className="text-[11px] text-slate-600">
-                    Locked at Lat: {officerGPS.lat.toFixed(6)}, Lng: {officerGPS.lng.toFixed(6)}
+              {gpsReadout ? (
+                <div
+                  className={`p-2 rounded-plate text-xs font-sans border ${
+                    gpsReadout.isNearby
+                      ? 'bg-fixed-green/10 border-fixed-green/30 text-fixed-green font-semibold'
+                      : 'bg-alert-red/10 border-alert-red/30 text-alert-red font-semibold'
+                  }`}
+                >
+                  <p>You&apos;re {gpsReadout.dist} m from the site (accuracy: &plusmn;{gpsReadout.accuracy} m)</p>
+                  <p className="text-[11px] font-normal mt-0.5">
+                    {gpsReadout.isNearby
+                      ? 'Location verified on site. Allowed radius: 50 m.'
+                      : `You must step within ${gpsReadout.maxAllowed} m of the problem to submit.`}
                   </p>
-                )}
-              </div>
+                </div>
+              ) : (
+                <p className="text-xs text-asphalt-muted">
+                  Lock your GPS position on site to verify presence before uploading resolution proof.
+                </p>
+              )}
+            </div>
 
-              {/* Step 2: Resolution Photo with capture="environment" */}
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-slate-800 flex items-center space-x-1.5">
-                  <Camera className="w-3.5 h-3.5 text-orange-600" />
-                  <span>Resolution Photographic Proof (capture=&quot;environment&quot;)</span>
-                </label>
+            {/* Live Camera Stream with Desktop File Fallback */}
+            <div className="space-y-2">
+              <label className="block text-xs font-heading font-bold text-asphalt">
+                Resolution Photograph Proof
+              </label>
 
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  onChange={handlePhotoCapture}
-                  className="hidden"
-                />
-
-                {resolutionPreview ? (
-                  <div className="relative rounded-2xl overflow-hidden border border-slate-200 bg-slate-900 aspect-video max-h-48 flex items-center justify-center">
-                    <img
-                      src={resolutionPreview}
-                      alt="Resolution Proof"
-                      className="w-full h-full object-cover"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      className="absolute bottom-2 right-2 px-3 py-1 bg-black/80 text-white text-[10px] font-bold rounded-lg"
-                    >
-                      Change Photo
-                    </button>
-                  </div>
-                ) : (
-                  <div
-                    onClick={() => fileInputRef.current?.click()}
-                    className="border-2 border-dashed border-slate-300 hover:border-emerald-500 rounded-2xl p-6 text-center cursor-pointer bg-slate-50 hover:bg-emerald-50/20 transition"
+              {resolutionPreview ? (
+                <div className="relative aspect-video rounded-control overflow-hidden border border-border bg-kerb">
+                  <Image
+                    src={resolutionPreview}
+                    alt="Resolution preview"
+                    fill
+                    sizes="400px"
+                    className="object-cover"
+                    unoptimized
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setResolutionPreview(null);
+                      setResolutionFile(null);
+                    }}
+                    className="absolute top-2 right-2 p-1.5 bg-asphalt/80 text-white rounded-full hover:bg-asphalt"
                   >
-                    <Camera className="w-6 h-6 text-emerald-600 mx-auto mb-1" />
-                    <p className="text-xs font-bold text-slate-800">
-                      Take Live Resolution Photograph
-                    </p>
-                    <p className="text-[10px] text-slate-400">Mobile camera capture enforced</p>
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              ) : isCameraActive ? (
+                <div className="relative aspect-video bg-black rounded-control overflow-hidden">
+                  <video
+                    ref={videoRef}
+                    playsInline
+                    muted
+                    className="w-full h-full object-cover"
+                  />
+                  <div className="absolute bottom-3 inset-x-0 flex justify-center gap-3">
+                    <Button type="button" variant="primary" size="sm" onClick={capturePhoto}>
+                      Capture Photo
+                    </Button>
+                    <Button type="button" variant="secondary" size="sm" onClick={stopCamera}>
+                      Cancel
+                    </Button>
                   </div>
-                )}
-              </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    type="button"
+                    variant="primary"
+                    onClick={startCamera}
+                    className="flex items-center justify-center gap-1.5"
+                  >
+                    <Camera className="w-4 h-4" />
+                    <span>Live Camera</span>
+                  </Button>
 
-              {/* Step 3: Remarks */}
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-800">Field Remarks / Material Used</label>
-                <textarea
-                  value={resolutionRemarks}
-                  onChange={(e) => setResolutionRemarks(e.target.value)}
-                  rows={2}
-                  placeholder="e.g. Asphalting completed with cold-mix bitumen, roller compacted and open for traffic."
-                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                  required
-                />
-              </div>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex items-center justify-center gap-1.5"
+                  >
+                    <Upload className="w-4 h-4" />
+                    <span>Upload Photo</span>
+                  </Button>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleFileChange}
+                  />
+                </div>
+              )}
+              {cameraError && (
+                <p className="text-xs text-alert-red">{cameraError}</p>
+              )}
+            </div>
 
-              {/* Buttons */}
-              <div className="flex items-center justify-end space-x-3 pt-3 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setResolvingComplaint(null)}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={submittingResolution}
-                  className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black shadow-lg shadow-emerald-600/25 transition disabled:opacity-50 flex items-center space-x-2"
-                >
-                  {submittingResolution ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Checking GPS Distance Gate...</span>
-                    </>
-                  ) : (
-                    <span>Submit & Begin 120h Citizen Audit</span>
-                  )}
-                </button>
+            {/* Resolution Remarks */}
+            <div>
+              <label className="block text-xs font-heading font-bold text-asphalt mb-1">
+                Resolution Remarks
+              </label>
+              <textarea
+                value={resolutionRemarks}
+                onChange={(e) => setResolutionRemarks(e.target.value)}
+                rows={2}
+                placeholder="Describe repairs executed on site..."
+                className="w-full px-3 py-2 text-xs font-sans rounded-control border border-border bg-white text-asphalt focus:outline-none focus:ring-1 focus:ring-signboard-blue"
+              />
+            </div>
+
+            {resolutionError && (
+              <div className="p-2 rounded-plate bg-alert-red/10 border border-alert-red/30 text-xs text-alert-red flex items-center gap-1.5">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{resolutionError}</span>
               </div>
-            </form>
-          </div>
-        </div>
-      )}
+            )}
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-border">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  stopCamera();
+                  setResolvingComplaint(null);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                variant="primary"
+                size="sm"
+                disabled={submittingResolution || !officerGPS || !resolutionPreview}
+              >
+                {submittingResolution ? 'Submitting...' : 'Confirm Resolution'}
+              </Button>
+            </div>
+          </form>
+        )}
+      </BottomSheet>
     </div>
   );
 }

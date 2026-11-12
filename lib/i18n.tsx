@@ -86,6 +86,14 @@ export interface Translations {
   admin: string;
   signIn: string;
   signOut: string;
+
+  // Filters & General Labels
+  allCategories: string;
+  allWards: string;
+  filterCategory: string;
+  filterWard: string;
+  waitingForRouting: string;
+  civicTrustIndexExplain: string;
 }
 
 const en: Translations = {
@@ -153,6 +161,14 @@ const en: Translations = {
   admin: 'Admin',
   signIn: 'Sign in',
   signOut: 'Sign out',
+
+  allCategories: 'All categories',
+  allWards: 'All wards',
+  filterCategory: 'Category',
+  filterWard: 'Ward',
+  waitingForRouting: 'Waiting for routing',
+  civicTrustIndexExplain:
+    'The Civic Trust Index measures how reliably and promptly municipal complaints are resolved and verified by citizens.',
 };
 
 const kn: Translations = {
@@ -220,6 +236,14 @@ const kn: Translations = {
   admin: 'ಆಡಳಿತ',
   signIn: 'ಸೈನ್ ಇನ್',
   signOut: 'ಸೈನ್ ಔಟ್',
+
+  allCategories: 'ಎಲ್ಲಾ ವರ್ಗಗಳು',
+  allWards: 'ಎಲ್ಲಾ ವಾರ್ಡ್‌ಗಳು',
+  filterCategory: 'ವರ್ಗ',
+  filterWard: 'ವಾರ್ಡ್',
+  waitingForRouting: 'ರೂಟಿಂಗ್ ಬಾಕಿ ಇದೆ',
+  civicTrustIndexExplain:
+    'ನಾಗರಿಕ ನಂಬಿಕೆ ಸೂಚ್ಯಂಕವು ಪುರಸಭೆಯ ದೂರುಗಳನ್ನು ನಾಗರಿಕರು ಎಷ್ಟು ವಿಶ್ವಾಸಾರ್ಹವಾಗಿ ಮತ್ತು ತ್ವರಿತವಾಗಿ ಪರಿಹರಿಸುತ್ತಾರೆ ಮತ್ತು ದೃಢೀಕರಿಸುತ್ತಾರೆ ಎಂಬುದನ್ನು ಅಳೆಯುತ್ತದೆ.',
 };
 
 interface I18nContextValue {

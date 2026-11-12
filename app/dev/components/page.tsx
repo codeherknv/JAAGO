@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { notFound } from 'next/navigation';
 import { Button } from '@/components/ui/Button';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { ComplaintRow } from '@/components/ui/ComplaintRow';
@@ -13,6 +14,9 @@ import { LanguageSwitch } from '@/components/ui/LanguageSwitch';
 import { useTranslation } from '@/lib/i18n';
 
 export default function DevComponentsPage() {
+  if (process.env.NODE_ENV === 'production') {
+    notFound();
+  }
   const { t, lang } = useTranslation();
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [supportCount, setSupportCount] = useState(14);
