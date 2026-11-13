@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { signIn } from 'next-auth/react';
+import { signIn, getSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { Shield, User, Wrench, AlertCircle, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
@@ -27,7 +27,14 @@ export default function LoginPage() {
       if (res?.error) {
         setError(res.error);
       } else {
-        router.push('/');
+        const session = await getSession();
+        if (session?.user?.role === 'officer') {
+          router.push('/officer/dashboard');
+        } else if (session?.user?.role === 'admin') {
+          router.push('/admin');
+        } else {
+          router.push('/my-complaints');
+        }
         router.refresh();
       }
     } catch (err: any) {

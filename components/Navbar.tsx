@@ -34,7 +34,7 @@ export default function Navbar() {
             {/* Brand Logo & Bengaluru Pilot Plate */}
             <div className="flex items-center gap-3">
               <Link
-                href="/explore"
+                href="/"
                 className="flex items-center gap-2.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-signboard-blue rounded-control p-1"
               >
                 {/* Physical Street Mile-Marker Badge */}
@@ -161,10 +161,31 @@ export default function Navbar() {
               )}
             </div>
 
-            {/* Mobile Top Header: Brand + Language */}
+            {/* Mobile Top Header: Brand + Language + User Session */}
             <div className="flex md:hidden items-center gap-2">
               <LanguageSwitch />
-              {!session?.user && (
+              {session?.user ? (
+                <div className="flex items-center gap-1.5 pl-1 border-l border-border">
+                  <span
+                    className={`px-2 py-0.5 rounded-plate text-[10px] font-heading font-bold uppercase tracking-wider ${
+                      isAdmin
+                        ? 'bg-asphalt text-marking-yellow'
+                        : isOfficer
+                        ? 'bg-signboard-blue text-white'
+                        : 'bg-kerb text-asphalt border border-border'
+                    }`}
+                  >
+                    {session.user.role}
+                  </span>
+                  <button
+                    onClick={() => signOut({ callbackUrl: '/login' })}
+                    title={t.signOut}
+                    className="p-1.5 rounded-control text-asphalt-muted hover:text-alert-red hover:bg-kerb transition-colors"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ) : (
                 <Link
                   href="/login"
                   className="px-2.5 py-1 text-xs font-heading font-semibold text-asphalt border border-border rounded-control"
@@ -187,12 +208,12 @@ export default function Navbar() {
           <Link
             href="/explore"
             className={`flex flex-col items-center justify-center min-w-[54px] min-h-[44px] rounded-control text-[11px] font-heading font-semibold transition-colors ${
-              pathname === '/explore' || pathname === '/'
-                ? 'text-asphalt'
+              pathname === '/explore'
+                ? 'text-asphalt font-bold'
                 : 'text-asphalt-muted'
             }`}
           >
-            <Compass className={`w-5 h-5 ${pathname === '/explore' || pathname === '/' ? 'stroke-[2.5]' : 'stroke-[1.75]'}`} />
+            <Compass className={`w-5 h-5 ${pathname === '/explore' ? 'stroke-[2.5]' : 'stroke-[1.75]'}`} />
             <span className="mt-0.5">{t.explore}</span>
           </Link>
 
@@ -205,25 +226,51 @@ export default function Navbar() {
             <Plus className="w-6 h-6 stroke-[3]" />
           </Link>
 
-          {/* Tab 3: My Complaints */}
-          <Link
-            href={session?.user ? '/my-complaints' : '/login'}
-            className={`flex flex-col items-center justify-center min-w-[54px] min-h-[44px] rounded-control text-[11px] font-heading font-semibold transition-colors ${
-              pathname === '/my-complaints'
-                ? 'text-asphalt'
-                : 'text-asphalt-muted'
-            }`}
-          >
-            <FileText className={`w-5 h-5 ${pathname === '/my-complaints' ? 'stroke-[2.5]' : 'stroke-[1.75]'}`} />
-            <span className="mt-0.5">{t.myComplaints}</span>
-          </Link>
+          {/* Tab 3: Role-Specific Action (Officer Queue / Admin Control / My Complaints) */}
+          {isOfficer ? (
+            <Link
+              href="/officer/dashboard"
+              className={`flex flex-col items-center justify-center min-w-[54px] min-h-[44px] rounded-control text-[11px] font-heading font-semibold transition-colors ${
+                pathname === '/officer/dashboard'
+                  ? 'text-signboard-blue font-bold'
+                  : 'text-asphalt-muted'
+              }`}
+            >
+              <Sliders className={`w-5 h-5 ${pathname === '/officer/dashboard' ? 'stroke-[2.5]' : 'stroke-[1.75]'}`} />
+              <span className="mt-0.5">{t.officer}</span>
+            </Link>
+          ) : isAdmin ? (
+            <Link
+              href="/admin"
+              className={`flex flex-col items-center justify-center min-w-[54px] min-h-[44px] rounded-control text-[11px] font-heading font-semibold transition-colors ${
+                pathname === '/admin'
+                  ? 'text-asphalt font-bold'
+                  : 'text-asphalt-muted'
+              }`}
+            >
+              <Shield className={`w-5 h-5 ${pathname === '/admin' ? 'stroke-[2.5]' : 'stroke-[1.75]'}`} />
+              <span className="mt-0.5">{t.admin}</span>
+            </Link>
+          ) : (
+            <Link
+              href={session?.user ? '/my-complaints' : '/login'}
+              className={`flex flex-col items-center justify-center min-w-[54px] min-h-[44px] rounded-control text-[11px] font-heading font-semibold transition-colors ${
+                pathname === '/my-complaints'
+                  ? 'text-asphalt font-bold'
+                  : 'text-asphalt-muted'
+              }`}
+            >
+              <FileText className={`w-5 h-5 ${pathname === '/my-complaints' ? 'stroke-[2.5]' : 'stroke-[1.75]'}`} />
+              <span className="mt-0.5">{t.myComplaints}</span>
+            </Link>
+          )}
 
-          {/* Tab 4: Leaderboard / Profile */}
+          {/* Tab 4: Leaderboard */}
           <Link
             href="/leaderboard"
             className={`flex flex-col items-center justify-center min-w-[54px] min-h-[44px] rounded-control text-[11px] font-heading font-semibold transition-colors ${
               pathname === '/leaderboard'
-                ? 'text-asphalt'
+                ? 'text-asphalt font-bold'
                 : 'text-asphalt-muted'
             }`}
           >
