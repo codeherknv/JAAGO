@@ -36,22 +36,25 @@ export async function connectToDatabase(): Promise<typeof mongoose> {
     };
 
     let uri = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/jaago';
+    const isRemote = uri.includes('mongodb+srv://') || (!uri.includes('127.0.0.1') && !uri.includes('localhost'));
+    const sanitizedUri = uri.replace(/\/\/([^:]+):([^@]+)@/, '//***:***@');
 
     cached.promise = (async () => {
       try {
-        // Attempt connecting with 2.5s server selection timeout to fail fast if offline
+        // Use 15s timeout for remote cloud clusters (Atlas) to allow DNS/TLS handshake; 3s for local fail-fast
         const conn = await mongoose.connect(uri, {
           ...opts,
-          serverSelectionTimeoutMS: 2500,
+          serverSelectionTimeoutMS: isRemote ? 15000 : 3000,
         });
+        console.log(`[MongoDB] Connected successfully to database "${conn.connection.db?.databaseName}" at ${sanitizedUri}`);
         return conn;
       } catch (err) {
-        if (process.env.NODE_ENV === 'production') {
-          console.error(`[MongoDB] FATAL: Primary database connection to ${uri} failed in production environment. Refusing in-memory fallback.`, err);
+        if (process.env.NODE_ENV === 'production' || isRemote) {
+          console.error(`[MongoDB] Connection to primary database (${sanitizedUri}) failed:`, err);
           throw err;
         }
 
-        console.warn(`[MongoDB] Primary connection to ${uri} failed. Attempting MongoDB Memory Server fallback for development/test environment...`);
+        console.warn(`[MongoDB] Local connection to ${sanitizedUri} failed. Attempting MongoDB Memory Server fallback for development/test environment...`);
         try {
           const { MongoMemoryReplSet } = await import('mongodb-memory-server');
           if (!cached.memoryServer) {

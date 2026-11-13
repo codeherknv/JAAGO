@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "seed": "tsx scripts/seedPilot.ts",
+    "seed": "tsx --env-file=.env.local scripts/seedPilot.ts",
     "test:spatial": "tsx scripts/testSpatial.ts",
     "test:fixes": "tsx scripts/testFixes.ts",
     "test:e2e": "tsx scripts/testFullE2E.ts"

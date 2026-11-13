@@ -83,6 +83,8 @@ async function runAuditFixesVerification() {
   }
 
   // 1a. Test production/dev guard: When NODE_ENV !== 'test', route must return 500 on missing/mock keys
+  const savedApiKey = process.env.CLOUDINARY_API_KEY;
+  delete process.env.CLOUDINARY_API_KEY;
   (process.env as any).NODE_ENV = 'development';
   const prodSignReq = new NextRequest('http://localhost:3000/api/uploads/sign', {
     method: 'POST',
@@ -90,6 +92,9 @@ async function runAuditFixesVerification() {
   });
   const prodSignRes = await signUploadPOST(prodSignReq);
   const prodSignData = await prodSignRes.json();
+  if (savedApiKey) {
+    process.env.CLOUDINARY_API_KEY = savedApiKey;
+  }
 
   if (prodSignRes.status !== 500 || !prodSignData.error) {
     throw new Error(`Expected status 500 when Cloudinary config is invalid in development, got: ${prodSignRes.status}`);
@@ -115,7 +120,7 @@ async function runAuditFixesVerification() {
     if (!signRouteSource.includes('&timestamp=')) {
       throw new Error('Test 1 failed: app/api/uploads/sign/route.ts does not use verbatim &timestamp= in signing string!');
     }
-    const testSecret = 'jaago-cloudinary-test-secret-sample-1234';
+    const testSecret = process.env.CLOUDINARY_API_SECRET || 'jaago-cloudinary-test-secret-sample-1234';
     const expectedParamsToSign = `allowed_formats=jpg,jpeg,png,webp&folder=jaago_complaints&timestamp=${testSignData.timestamp}${testSecret}`;
     const computedSignature = crypto.createHash('sha1').update(expectedParamsToSign).digest('hex');
     if (testSignData.signature !== computedSignature) {
