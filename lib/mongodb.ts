@@ -49,12 +49,13 @@ export async function connectToDatabase(): Promise<typeof mongoose> {
         console.log(`[MongoDB] Connected successfully to database "${conn.connection.db?.databaseName}" at ${sanitizedUri}`);
         return conn;
       } catch (err) {
-        if (process.env.NODE_ENV === 'production' || isRemote) {
+        const isTestEnv = process.env.NODE_ENV === 'test';
+        if (process.env.NODE_ENV === 'production' || (isRemote && !isTestEnv)) {
           console.error(`[MongoDB] Connection to primary database (${sanitizedUri}) failed:`, err);
           throw err;
         }
 
-        console.warn(`[MongoDB] Local connection to ${sanitizedUri} failed. Attempting MongoDB Memory Server fallback for development/test environment...`);
+        console.warn(`[MongoDB] Primary connection to ${sanitizedUri} failed. Attempting MongoDB Memory Server fallback for development/test environment...`);
         try {
           const { MongoMemoryReplSet } = await import('mongodb-memory-server');
           if (!cached.memoryServer) {

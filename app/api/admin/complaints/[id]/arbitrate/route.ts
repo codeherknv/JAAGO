@@ -9,9 +9,9 @@ import '@/models/Agency';
 
 export const dynamic = 'force-dynamic';
 
-export async function PATCH(
+async function handleArbitrate(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  params: { id: string }
 ) {
   try {
     const admin = await requireRole(['admin'], req);
@@ -74,4 +74,18 @@ export async function PATCH(
   } catch (error: any) {
     return formatApiError(error);
   }
+}
+
+export async function POST(
+  req: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  return handleArbitrate(req, params);
+}
+
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  return handleArbitrate(req, params);
 }

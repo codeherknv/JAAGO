@@ -268,7 +268,7 @@ export default function AdminDashboardPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action,
-          remarks: actionRemarks,
+          remarks: actionRemarks.trim(),
         }),
       });
       const data = await res.json();
@@ -287,8 +287,8 @@ export default function AdminDashboardPage() {
   };
 
   // Handle Complaint Invalidation
-  const handleInvalidateComplaint = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleInvalidateComplaint = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     if (!actionComplaint) return;
     if (!actionRemarks || actionRemarks.trim().length < 5) {
       setMessage({ text: 'A detailed reason (at least 5 characters) is required to invalidate a complaint', type: 'error' });
@@ -301,7 +301,7 @@ export default function AdminDashboardPage() {
       const res = await fetch(`/api/admin/complaints/${actionComplaint._id}/reject`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reason: actionRemarks }),
+        body: JSON.stringify({ reason: actionRemarks.trim() }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to invalidate complaint');
@@ -735,7 +735,13 @@ export default function AdminDashboardPage() {
       {/* Confirmation Dialog: Triage Assignment */}
       <Modal
         isOpen={Boolean(actionComplaint && actionType === 'assign')}
-        onClose={() => setActionComplaint(null)}
+        onClose={() => {
+          setActionComplaint(null);
+          setActionType(null);
+          setActionRemarks('');
+          setAssignWardId('');
+          setAssignAgencyId('');
+        }}
         title="Manual Ward & Agency Routing"
         maxWidth="max-w-md"
       >
@@ -796,7 +802,18 @@ export default function AdminDashboardPage() {
               </div>
 
               <div className="flex justify-end gap-2 pt-2 border-t border-border">
-                <Button type="button" variant="secondary" size="sm" onClick={() => setActionComplaint(null)}>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    setActionComplaint(null);
+                    setActionType(null);
+                    setActionRemarks('');
+                    setAssignWardId('');
+                    setAssignAgencyId('');
+                  }}
+                >
                   Cancel
                 </Button>
                 <Button type="submit" variant="primary" size="sm" disabled={submitting || !assignWardId || !assignAgencyId}>
@@ -811,12 +828,22 @@ export default function AdminDashboardPage() {
       {/* Confirmation Dialog: Dispute Arbitration */}
       <Modal
         isOpen={Boolean(actionComplaint && (actionType === 'resolveDispute' || actionType === 'rejectDispute'))}
-        onClose={() => setActionComplaint(null)}
+        onClose={() => {
+          setActionComplaint(null);
+          setActionType(null);
+          setActionRemarks('');
+        }}
         title={actionType === 'resolveDispute' ? 'Arbitrate Dispute: Accept Resolution' : 'Arbitrate Dispute: Reject & Reopen'}
         maxWidth="max-w-md"
       >
         {actionComplaint && (
-          <div className="space-y-4">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleArbitrateDispute(actionType === 'resolveDispute' ? 'resolve' : 'reject');
+            }}
+            className="space-y-4"
+          >
             <p className="text-xs text-asphalt-muted leading-relaxed">
               {actionType === 'resolveDispute'
                 ? 'Confirming this resolution will mark the complaint as Resolved - Citizen Verified through administrative executive authority.'
@@ -825,76 +852,106 @@ export default function AdminDashboardPage() {
 
             <div>
               <label className="block text-xs font-heading font-bold text-asphalt mb-1">
-                Mandatory Arbitration Findings
+                Mandatory Arbitration Findings <span className="text-alert-red">*</span>
               </label>
               <textarea
                 required
+                autoFocus
                 value={actionRemarks}
                 onChange={(e) => setActionRemarks(e.target.value)}
                 rows={3}
                 placeholder="State documented justification (contractor logs, CCTV, on-site inspection)..."
-                className="w-full px-3 py-2 text-xs font-sans rounded-control border border-border bg-white text-asphalt"
+                className="w-full px-3 py-2 text-xs font-sans rounded-control border border-border bg-white text-asphalt focus:outline-none focus:ring-1 focus:ring-signboard-blue"
               />
+              <span className="text-[10px] text-asphalt-muted font-sans mt-0.5 block">
+                Minimum 5 characters required ({actionRemarks.trim().length}/5)
+              </span>
             </div>
 
             <div className="flex justify-end gap-2 pt-2 border-t border-border">
-              <Button type="button" variant="secondary" size="sm" onClick={() => setActionComplaint(null)}>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  setActionComplaint(null);
+                  setActionType(null);
+                  setActionRemarks('');
+                }}
+              >
                 Cancel
               </Button>
               <Button
+                type="submit"
                 variant={actionType === 'resolveDispute' ? 'primary' : 'destructive'}
                 size="sm"
-                onClick={() => handleArbitrateDispute(actionType === 'resolveDispute' ? 'resolve' : 'reject')}
-                disabled={submitting || !actionRemarks.trim()}
+                disabled={submitting || actionRemarks.trim().length < 5}
               >
                 {submitting ? 'Arbitrating...' : 'Confirm Ruling'}
               </Button>
             </div>
-          </div>
+          </form>
         )}
       </Modal>
 
       {/* Confirmation Dialog: Invalidate Complaint */}
       <Modal
         isOpen={Boolean(actionComplaint && actionType === 'invalidate')}
-        onClose={() => setActionComplaint(null)}
+        onClose={() => {
+          setActionComplaint(null);
+          setActionType(null);
+          setActionRemarks('');
+        }}
         title="Mark Complaint Rejected - Invalid"
         maxWidth="max-w-md"
       >
         {actionComplaint && (
-          <div className="space-y-4">
+          <form onSubmit={handleInvalidateComplaint} className="space-y-4">
             <p className="text-xs text-asphalt-muted leading-relaxed">
               This action terminates the redressal workflow for &quot;{actionComplaint.title}&quot;. A clear public reason must be recorded in the audit trail.
             </p>
 
             <div>
               <label className="block text-xs font-heading font-bold text-asphalt mb-1">
-                Invalidation Reason
+                Invalidation Reason <span className="text-alert-red">*</span>
               </label>
               <textarea
                 required
+                autoFocus
                 value={actionRemarks}
                 onChange={(e) => setActionRemarks(e.target.value)}
                 rows={3}
                 placeholder="State why this report is invalid (e.g., private property, duplicate, malicious)..."
-                className="w-full px-3 py-2 text-xs font-sans rounded-control border border-border bg-white text-asphalt"
+                className="w-full px-3 py-2 text-xs font-sans rounded-control border border-border bg-white text-asphalt focus:outline-none focus:ring-1 focus:ring-alert-red"
               />
+              <span className="text-[10px] text-asphalt-muted font-sans mt-0.5 block">
+                Minimum 5 characters required ({actionRemarks.trim().length}/5)
+              </span>
             </div>
 
             <div className="flex justify-end gap-2 pt-2 border-t border-border">
-              <Button type="button" variant="secondary" size="sm" onClick={() => setActionComplaint(null)}>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  setActionComplaint(null);
+                  setActionType(null);
+                  setActionRemarks('');
+                }}
+              >
                 Cancel
               </Button>
               <Button
+                type="submit"
                 variant="destructive"
                 size="sm"
-                onClick={handleInvalidateComplaint}
-                disabled={submitting || !actionRemarks.trim()}
+                disabled={submitting || actionRemarks.trim().length < 5}
               >
                 {submitting ? 'Invalidating...' : 'Confirm Invalidation'}
               </Button>
             </div>
-          </div>
+          </form>
         )}
       </Modal>
 

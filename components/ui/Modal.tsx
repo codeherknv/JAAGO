@@ -20,17 +20,32 @@ export function Modal({
 }: ModalProps) {
   const modalRef = useRef<HTMLDivElement>(null);
   const previouslyFocusedRef = useRef<HTMLElement | null>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     if (!isOpen) return;
 
-    // Capture currently focused element before opening dialog
+    // Capture currently focused element once when dialog opens
     previouslyFocusedRef.current = document.activeElement as HTMLElement;
     document.body.style.overflow = 'hidden';
 
-    // Move initial focus into the dialog
+    // Move initial focus into the dialog (preferring form inputs/textarea if available)
     const timer = setTimeout(() => {
       if (modalRef.current) {
+        // If user is already focused on an element inside the modal, don't steal focus
+        if (modalRef.current.contains(document.activeElement)) {
+          return;
+        }
+
+        const formInput = modalRef.current.querySelector<HTMLElement>(
+          'textarea:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled])'
+        );
+        if (formInput) {
+          formInput.focus();
+          return;
+        }
+
         const focusable = Array.from(
           modalRef.current.querySelectorAll<HTMLElement>(
             'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
@@ -49,7 +64,7 @@ export function Modal({
       // 1. Close on Escape
       if (e.key === 'Escape') {
         e.preventDefault();
-        onClose();
+        onCloseRef.current();
         return;
       }
 
@@ -82,7 +97,7 @@ export function Modal({
 
     window.addEventListener('keydown', handleKeyDown);
 
-    // 3. Return focus to trigger element on close / unmount
+    // 3. Return focus to trigger element ONLY when dialog closes or unmounts
     return () => {
       clearTimeout(timer);
       document.body.style.overflow = '';
@@ -94,7 +109,7 @@ export function Modal({
         previouslyFocusedRef.current.focus();
       }
     };
-  }, [isOpen, onClose]);
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
