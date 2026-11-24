@@ -62,6 +62,18 @@ textarea:focus-visible {
   background-color: #E2E6E4;
 }
 
+/* Keep Explore map zoom controls cleanly positioned below the floating filter bar */
+.explore-map-host .leaflet-top.leaflet-left {
+  top: var(--explore-zoom-top, 72px);
+  left: 2px;
+}
+
+@media (min-width: 768px) {
+  .explore-map-host .leaflet-top.leaflet-left {
+    left: 14px;
+  }
+}
+
 /* Motion: Respect prefers-reduced-motion */
 @media (prefers-reduced-motion: reduce) {
   *,

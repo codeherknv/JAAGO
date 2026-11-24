@@ -16,6 +16,10 @@ import {
   ChevronRight,
   X,
   Upload,
+  Pencil,
+  Trash2,
+  Loader2,
+  AlertTriangle,
 } from 'lucide-react';
 import { calculateHaversineDistance, calculateAllowedResolutionRadius } from '@/lib/geo';
 import { uploadToCloudinary } from '@/lib/cloudinaryClient';
@@ -24,6 +28,7 @@ import { Button } from '@/components/ui/Button';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { BottomSheet } from '@/components/ui/BottomSheet';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { Modal } from '@/components/ui/Modal';
 
 // Dynamic import of Leaflet map
 const CivicLeafletMap = dynamic(() => import('@/components/CivicLeafletMap'), {
@@ -64,6 +69,78 @@ export default function OfficerDashboardPage() {
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Edit & Delete modal states
+  const [editingComplaint, setEditingComplaint] = useState<any | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editCategory, setEditCategory] = useState<string>('Roads');
+  const [editDescription, setEditDescription] = useState('');
+  const [editAddress, setEditAddress] = useState('');
+  const [deletingComplaint, setDeletingComplaint] = useState<any | null>(null);
+  const [submittingAction, setSubmittingAction] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const handleOpenEditModal = (c: any) => {
+    setEditingComplaint(c);
+    setEditTitle(c.title || '');
+    setEditCategory(c.category || 'Roads');
+    setEditDescription(c.description || '');
+    setEditAddress(c.address || '');
+    setActionError(null);
+  };
+
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingComplaint) return;
+    setSubmittingAction(true);
+    setActionError(null);
+    try {
+      const res = await fetch(`/api/complaints/${editingComplaint._id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: editTitle.trim(),
+          category: editCategory,
+          description: editDescription.trim(),
+          address: editAddress.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to update complaint');
+
+      setComplaints((prev) =>
+        prev.map((item) => (item._id === editingComplaint._id ? { ...item, ...data.complaint } : item))
+      );
+      setEditingComplaint(null);
+    } catch (err: any) {
+      setActionError(err.message);
+    } finally {
+      setSubmittingAction(false);
+    }
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deletingComplaint) return;
+    setSubmittingAction(true);
+    setActionError(null);
+    try {
+      const res = await fetch(`/api/complaints/${deletingComplaint._id}`, {
+        method: 'DELETE',
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to delete complaint');
+
+      setComplaints((prev) => prev.filter((item) => item._id !== deletingComplaint._id));
+      if (selectedComplaint?._id === deletingComplaint._id) {
+        setSelectedComplaint(null);
+      }
+      setDeletingComplaint(null);
+    } catch (err: any) {
+      setActionError(err.message);
+    } finally {
+      setSubmittingAction(false);
+    }
+  };
+
   // Initialize selected ward from session
   useEffect(() => {
     if (session?.user?.assignedWardId) {
@@ -89,16 +166,12 @@ export default function OfficerDashboardPage() {
       );
       setComplaints(validComplaints);
 
-      // Extract unique wards for filter
-      const allComplaintsRes = await fetch('/api/complaints?limit=100');
-      const allData = await allComplaintsRes.json();
-      const wardMap = new Map();
-      (allData.complaints || []).forEach((c: any) => {
-        if (c.wardId && c.wardId._id) {
-          wardMap.set(c.wardId._id, c.wardId);
-        }
-      });
-      setWards(Array.from(wardMap.values()));
+      // Fetch ward boundaries and metadata from /api/wards
+      const wardsRes = await fetch('/api/wards');
+      if (wardsRes.ok) {
+        const wardsData = await wardsRes.json();
+        setWards(wardsData.wards || []);
+      }
     } catch (err) {
       console.error('Failed to load officer data:', err);
     } finally {
@@ -473,14 +546,41 @@ export default function OfficerDashboardPage() {
                             </Button>
                           )}
 
-                          <Link
-                            href={`/complaints/${c._id}`}
-                            onClick={(e) => e.stopPropagation()}
-                            className="text-[11px] font-heading font-semibold text-signboard-blue hover:underline flex items-center gap-0.5"
-                          >
-                            <span>Details</span>
-                            <ChevronRight className="w-3 h-3" />
-                          </Link>
+                          <div className="flex items-center gap-2 pt-0.5">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenEditModal(c);
+                              }}
+                              className="text-[11px] font-heading font-semibold text-asphalt-muted hover:text-asphalt flex items-center gap-0.5 transition-colors"
+                              title="Edit Complaint"
+                            >
+                              <Pencil className="w-3 h-3" />
+                              <span>Edit</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setDeletingComplaint(c);
+                                setActionError(null);
+                              }}
+                              className="text-[11px] font-heading font-semibold text-alert-red hover:underline flex items-center gap-0.5 transition-colors"
+                              title="Delete Complaint"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                              <span>Delete</span>
+                            </button>
+                            <Link
+                              href={`/complaints/${c._id}`}
+                              onClick={(e) => e.stopPropagation()}
+                              className="text-[11px] font-heading font-semibold text-signboard-blue hover:underline flex items-center gap-0.5"
+                            >
+                              <span>Details</span>
+                              <ChevronRight className="w-3 h-3" />
+                            </Link>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -710,6 +810,189 @@ export default function OfficerDashboardPage() {
           </form>
         )}
       </BottomSheet>
+
+      {/* Edit Complaint Modal */}
+      <Modal
+        isOpen={Boolean(editingComplaint)}
+        onClose={() => {
+          if (!submittingAction) {
+            setEditingComplaint(null);
+            setActionError(null);
+          }
+        }}
+        title="Edit Complaint Details"
+        maxWidth="max-w-lg"
+      >
+        {editingComplaint && (
+          <form onSubmit={handleSaveEdit} className="space-y-4">
+            {actionError && (
+              <div className="p-2.5 rounded-plate bg-alert-light border border-alert-red/30 text-xs text-alert-red flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                <span>{actionError}</span>
+              </div>
+            )}
+
+            <div>
+              <label className="block text-xs font-heading font-bold text-asphalt mb-1">
+                Title <span className="text-alert-red">*</span>
+              </label>
+              <input
+                type="text"
+                required
+                minLength={3}
+                maxLength={150}
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+                placeholder="Brief summary of the issue"
+                className="w-full px-3 py-2 text-xs font-sans rounded-control border border-border bg-white text-asphalt focus:outline-none focus:ring-1 focus:ring-signboard-blue"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-heading font-bold text-asphalt mb-1">
+                  Category <span className="text-alert-red">*</span>
+                </label>
+                <select
+                  value={editCategory}
+                  onChange={(e) => setEditCategory(e.target.value)}
+                  className="w-full px-3 py-2 text-xs font-heading font-semibold rounded-control border border-border bg-white text-asphalt focus:outline-none focus:ring-1 focus:ring-signboard-blue"
+                >
+                  <option value="Roads">Roads</option>
+                  <option value="Sanitation">Sanitation</option>
+                  <option value="Streetlights">Streetlights</option>
+                  <option value="Water Supply & Drainage">Water Supply & Drainage</option>
+                  <option value="Others">Others</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-heading font-bold text-asphalt mb-1">
+                  Location / Address
+                </label>
+                <input
+                  type="text"
+                  maxLength={300}
+                  value={editAddress}
+                  onChange={(e) => setEditAddress(e.target.value)}
+                  placeholder="Street name, landmark"
+                  className="w-full px-3 py-2 text-xs font-sans rounded-control border border-border bg-white text-asphalt focus:outline-none focus:ring-1 focus:ring-signboard-blue"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-heading font-bold text-asphalt mb-1">
+                Description <span className="text-alert-red">*</span>
+              </label>
+              <textarea
+                required
+                minLength={5}
+                maxLength={2000}
+                rows={4}
+                value={editDescription}
+                onChange={(e) => setEditDescription(e.target.value)}
+                placeholder="Describe the problem, severity, and any hazards..."
+                className="w-full px-3 py-2 text-xs font-sans rounded-control border border-border bg-white text-asphalt focus:outline-none focus:ring-1 focus:ring-signboard-blue resize-none"
+              />
+              <span className="text-[10px] text-asphalt-muted font-sans mt-0.5 block text-right">
+                {editDescription.length} / 2000
+              </span>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-border">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  setEditingComplaint(null);
+                  setActionError(null);
+                }}
+                disabled={submittingAction}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                variant="primary"
+                size="sm"
+                disabled={submittingAction || editTitle.trim().length < 3 || editDescription.trim().length < 5}
+              >
+                {submittingAction ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                    <span>Saving...</span>
+                  </>
+                ) : (
+                  <span>Save Changes</span>
+                )}
+              </Button>
+            </div>
+          </form>
+        )}
+      </Modal>
+
+      {/* Delete Complaint Confirmation Modal */}
+      <Modal
+        isOpen={Boolean(deletingComplaint)}
+        onClose={() => {
+          if (!submittingAction) {
+            setDeletingComplaint(null);
+            setActionError(null);
+          }
+        }}
+        title="Delete Complaint"
+        maxWidth="max-w-md"
+      >
+        {deletingComplaint && (
+          <div className="space-y-4">
+            {actionError && (
+              <div className="p-2.5 rounded-plate bg-alert-light border border-alert-red/30 text-xs text-alert-red flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                <span>{actionError}</span>
+              </div>
+            )}
+
+            <p className="text-xs text-asphalt-muted leading-relaxed">
+              Are you sure you want to permanently delete{' '}
+              <strong className="text-asphalt font-semibold">&quot;{deletingComplaint.title}&quot;</strong>?
+              This action will remove the complaint and all associated votes. This cannot be undone.
+            </p>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-border">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  setDeletingComplaint(null);
+                  setActionError(null);
+                }}
+                disabled={submittingAction}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                size="sm"
+                onClick={handleConfirmDelete}
+                disabled={submittingAction}
+              >
+                {submittingAction ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                    <span>Deleting...</span>
+                  </>
+                ) : (
+                  <span>Confirm Delete</span>
+                )}
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

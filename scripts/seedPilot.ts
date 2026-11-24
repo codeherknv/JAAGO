@@ -96,6 +96,108 @@ export const BENGALURU_WARDS = [
       ],
     },
   },
+  {
+    name: 'Jayanagar',
+    code: 'W-153',
+    corporation: 'Greater Bengaluru Authority',
+    boundary: {
+      type: 'Polygon' as const,
+      coordinates: [
+        [
+          [77.5780, 12.9180],
+          [77.6060, 12.9180],
+          [77.6060, 12.9420],
+          [77.5780, 12.9420],
+          [77.5780, 12.9180],
+        ],
+      ],
+    },
+  },
+  {
+    name: 'Basavanagudi',
+    code: 'W-154',
+    corporation: 'Greater Bengaluru Authority',
+    boundary: {
+      type: 'Polygon' as const,
+      coordinates: [
+        [
+          [77.5550, 12.9250],
+          [77.5775, 12.9250],
+          [77.5775, 12.9500],
+          [77.5550, 12.9500],
+          [77.5550, 12.9250],
+        ],
+      ],
+    },
+  },
+  {
+    name: 'BTM Layout',
+    code: 'W-176',
+    corporation: 'Greater Bengaluru Authority',
+    boundary: {
+      type: 'Polygon' as const,
+      coordinates: [
+        [
+          [77.6000, 12.9020],
+          [77.6280, 12.9020],
+          [77.6280, 12.9220],
+          [77.6000, 12.9220],
+          [77.6000, 12.9020],
+        ],
+      ],
+    },
+  },
+  {
+    name: 'Indiranagar',
+    code: 'W-80',
+    corporation: 'Greater Bengaluru Authority',
+    boundary: {
+      type: 'Polygon' as const,
+      coordinates: [
+        [
+          [77.6280, 12.9650],
+          [77.6580, 12.9650],
+          [77.6580, 12.9900],
+          [77.6280, 12.9900],
+          [77.6280, 12.9650],
+        ],
+      ],
+    },
+  },
+  {
+    name: 'Malleshwaram',
+    code: 'W-45',
+    corporation: 'Greater Bengaluru Authority',
+    boundary: {
+      type: 'Polygon' as const,
+      coordinates: [
+        [
+          [77.5600, 12.9900],
+          [77.5850, 12.9900],
+          [77.5850, 13.0150],
+          [77.5600, 13.0150],
+          [77.5600, 12.9900],
+        ],
+      ],
+    },
+  },
+  {
+    name: 'Whitefield',
+    code: 'W-83',
+    corporation: 'Greater Bengaluru Authority',
+    boundary: {
+      type: 'Polygon' as const,
+      coordinates: [
+        [
+          [77.7250, 12.9600],
+          [77.7650, 12.9600],
+          [77.7650, 12.9950],
+          [77.7250, 12.9950],
+          [77.7250, 12.9600],
+        ],
+      ],
+    },
+  },
 ];
 
 export const CIVIC_AGENCIES = [
@@ -154,6 +256,12 @@ export async function seedPilotDatabase() {
   const bellandurWard = wardMap.get('W-150')!;
   const hsrWard = wardMap.get('W-174')!;
   const koramangalaWard = wardMap.get('W-151')!;
+  const jayanagarWard = wardMap.get('W-153')!;
+  const basavanagudiWard = wardMap.get('W-154')!;
+  const btmWard = wardMap.get('W-176')!;
+  const indiranagarWard = wardMap.get('W-80')!;
+  const malleshwaramWard = wardMap.get('W-45')!;
+  const whitefieldWard = wardMap.get('W-83')!;
   const bbmpRoads = agencyMap.get('BBMP-Roads')!;
   const bbmpSwm = agencyMap.get('BBMP-SWM')!;
 
@@ -998,6 +1106,217 @@ export async function seedPilotDatabase() {
         },
       ],
     },
+    // Complaint 16: Jayanagar Roads (Pending)
+    {
+      title: 'Caved-in cobblestone footpath near Jayanagar 4th Block Complex',
+      description: 'Pedestrian pavement slabs displaced near 11th Main Rd bus bay, creating tripping hazards for senior citizens.',
+      category: 'Roads' as const,
+      location: {
+        type: 'Point' as const,
+        coordinates: [77.5838, 12.9299], // [lng, lat] Jayanagar
+      },
+      address: '11th Main Rd, 4th Block, Jayanagar, Bengaluru 560011',
+      wardId: jayanagarWard._id,
+      agencyId: bbmpRoads._id,
+      imageUrl: getPhoto(0, 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/pothole_bellandur_1.jpg'),
+      status: 'Pending' as const,
+      reportedBy: rahul._id,
+      createdAt: new Date(Date.now() - 28 * 3600 * 1000),
+      upvotesCount: 2,
+      reopenCount: 0,
+      priorityScore: 14.5,
+      statusHistory: [
+        {
+          status: 'Pending' as const,
+          actorId: rahul._id,
+          role: 'citizen' as const,
+          timestamp: new Date(Date.now() - 28 * 3600 * 1000),
+          remarks: 'Reported uneven pavement tiles near shopping complex.',
+        },
+      ],
+    },
+    // Complaint 17: Basavanagudi Streetlights (In Progress)
+    {
+      title: 'Non-functional heritage streetlamps along Gandhi Bazaar Main Rd',
+      description: 'Four consecutive LED poles near Tagore Circle junction are dark after 6:30 PM.',
+      category: 'Streetlights' as const,
+      location: {
+        type: 'Point' as const,
+        coordinates: [77.5678, 12.9417], // [lng, lat] Basavanagudi
+      },
+      address: 'Bull Temple Rd & Gandhi Bazaar, Basavanagudi, Bengaluru 560004',
+      wardId: basavanagudiWard._id,
+      agencyId: bescom._id,
+      imageUrl: getPhoto(12, 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/streetlight_outage_kora.jpg'),
+      status: 'In Progress' as const,
+      reportedBy: priya._id,
+      createdAt: new Date(Date.now() - 32 * 3600 * 1000),
+      upvotesCount: 2,
+      reopenCount: 0,
+      priorityScore: 15.0,
+      statusHistory: [
+        {
+          status: 'Pending' as const,
+          actorId: priya._id,
+          role: 'citizen' as const,
+          timestamp: new Date(Date.now() - 32 * 3600 * 1000),
+          remarks: 'Submitted lighting outage along evening market stretch.',
+        },
+        {
+          status: 'In Progress' as const,
+          actorId: ramesh._id,
+          role: 'officer' as const,
+          timestamp: new Date(Date.now() - 12 * 3600 * 1000),
+          remarks: 'BESCOM maintenance team dispatched to inspect underground feeder cable.',
+        },
+      ],
+    },
+    // Complaint 18: BTM Layout Water Supply & Drainage (Pending)
+    {
+      title: 'Blocked stormwater inlet near Udupi Garden junction',
+      description: 'Silt accumulation at the corner drain causes ankle-deep stagnation during evening showers.',
+      category: 'Water Supply & Drainage' as const,
+      location: {
+        type: 'Point' as const,
+        coordinates: [77.6101, 12.9166], // [lng, lat] BTM Layout
+      },
+      address: '16th Main Rd, BTM 2nd Stage, Bengaluru 560076',
+      wardId: btmWard._id,
+      agencyId: bwssb._id,
+      imageUrl: getPhoto(8, 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/stormwater_drain_broken_bellandur.jpg'),
+      status: 'Pending' as const,
+      reportedBy: rahul._id,
+      createdAt: new Date(Date.now() - 22 * 3600 * 1000),
+      upvotesCount: 2,
+      reopenCount: 0,
+      priorityScore: 14.0,
+      statusHistory: [
+        {
+          status: 'Pending' as const,
+          actorId: rahul._id,
+          role: 'citizen' as const,
+          timestamp: new Date(Date.now() - 22 * 3600 * 1000),
+          remarks: 'Initial report submitted with junction coordinates.',
+        },
+      ],
+    },
+    // Complaint 19: Indiranagar Sanitation (Pending Verification)
+    {
+      title: 'Overflowing dry-waste bins near 100 Feet Road metro approach',
+      description: 'Commercial packaging waste left beside the segregated collection enclosure.',
+      category: 'Sanitation' as const,
+      location: {
+        type: 'Point' as const,
+        coordinates: [77.6408, 12.9784], // [lng, lat] Indiranagar
+      },
+      address: '100 Feet Rd, HAL 2nd Stage, Indiranagar, Bengaluru 560038',
+      wardId: indiranagarWard._id,
+      agencyId: bbmpSwm._id,
+      imageUrl: getPhoto(4, 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/garbage_overflow_hsr.jpg'),
+      resolutionImageUrl: getPhoto(5, 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/garbage_cleared_hsr.jpg'),
+      status: 'Pending Verification' as const,
+      reportedBy: priya._id,
+      createdAt: new Date(Date.now() - 40 * 3600 * 1000),
+      verificationDeadline: new Date(Date.now() + 96 * 3600 * 1000),
+      upvotesCount: 2,
+      reopenCount: 0,
+      priorityScore: 14.0,
+      statusHistory: [
+        {
+          status: 'Pending' as const,
+          actorId: priya._id,
+          role: 'citizen' as const,
+          timestamp: new Date(Date.now() - 40 * 3600 * 1000),
+          remarks: 'Sanitation overflow flagged near metro exit.',
+        },
+        {
+          status: 'Pending Verification' as const,
+          actorId: sunita._id,
+          role: 'officer' as const,
+          timestamp: new Date(Date.now() - 10 * 3600 * 1000),
+          remarks: 'Cleared with compactor van and area washed.',
+          imageUrl: getPhoto(5, 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/garbage_cleared_hsr.jpg'),
+          locationAccuracy: 8,
+          resolutionDistanceMeters: 11,
+        },
+      ],
+    },
+    // Complaint 20: Malleshwaram Roads (Resolved - Citizen Verified)
+    {
+      title: 'Resurfacing repair at 8th Cross Sampige Road',
+      description: 'Worn-out asphalt patch near temple square causing two-wheeler skidding.',
+      category: 'Roads' as const,
+      location: {
+        type: 'Point' as const,
+        coordinates: [77.5703, 13.0031], // [lng, lat] Malleshwaram
+      },
+      address: 'Sampige Rd, 8th Cross, Malleshwaram, Bengaluru 560003',
+      wardId: malleshwaramWard._id,
+      agencyId: bbmpRoads._id,
+      imageUrl: getPhoto(1, 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/pothole_bellandur_2.jpg'),
+      resolutionImageUrl: getPhoto(3, 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/pothole_repaired_bellandur.jpg'),
+      status: 'Resolved - Citizen Verified' as const,
+      reportedBy: rahul._id,
+      createdAt: new Date(Date.now() - 72 * 3600 * 1000),
+      upvotesCount: 2,
+      reopenCount: 0,
+      priorityScore: 0,
+      statusHistory: [
+        {
+          status: 'Pending' as const,
+          actorId: rahul._id,
+          role: 'citizen' as const,
+          timestamp: new Date(Date.now() - 72 * 3600 * 1000),
+          remarks: 'Asphalt deterioration reported.',
+        },
+        {
+          status: 'Pending Verification' as const,
+          actorId: ramesh._id,
+          role: 'officer' as const,
+          timestamp: new Date(Date.now() - 36 * 3600 * 1000),
+          remarks: 'Hot-mix resurfacing completed and compacted.',
+          imageUrl: getPhoto(3, 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/pothole_repaired_bellandur.jpg'),
+          locationAccuracy: 9,
+          resolutionDistanceMeters: 10,
+        },
+        {
+          status: 'Resolved - Citizen Verified' as const,
+          actorId: rahul._id,
+          role: 'citizen' as const,
+          timestamp: new Date(Date.now() - 20 * 3600 * 1000),
+          remarks: 'Smooth surface verified on inspection.',
+        },
+      ],
+    },
+    // Complaint 21: Whitefield Roads (Pending)
+    {
+      title: 'Deep trench cut unpatched on ITPL Main Road service lane',
+      description: 'Utility trench left unfilled near Graphites India signal causing heavy peak-hour bottlenecks.',
+      category: 'Roads' as const,
+      location: {
+        type: 'Point' as const,
+        coordinates: [77.7499, 12.9698], // [lng, lat] Whitefield
+      },
+      address: 'ITPL Main Rd, Whitefield, Bengaluru 560066',
+      wardId: whitefieldWard._id,
+      agencyId: bbmpRoads._id,
+      imageUrl: getPhoto(6, 'https://res.cloudinary.com/jaago-pilot/image/upload/v1700000000/jaago_complaints/pothole_hsr_outer.jpg'),
+      status: 'Pending' as const,
+      reportedBy: priya._id,
+      createdAt: new Date(Date.now() - 18 * 3600 * 1000),
+      upvotesCount: 2,
+      reopenCount: 0,
+      priorityScore: 15.5,
+      statusHistory: [
+        {
+          status: 'Pending' as const,
+          actorId: priya._id,
+          role: 'citizen' as const,
+          timestamp: new Date(Date.now() - 18 * 3600 * 1000),
+          remarks: 'Utility road-cut hazard flagged during morning commute.',
+        },
+      ],
+    },
   ];
 
   const createdComplaints = await Complaint.insertMany(complaintsToCreate);
@@ -1063,6 +1382,24 @@ export async function seedPilotDatabase() {
     { complaintId: createdComplaints[15]._id, userId: rahul._id },
     { complaintId: createdComplaints[15]._id, userId: voter1._id },
     { complaintId: createdComplaints[15]._id, userId: voter2._id },
+    // Complaint 16 - Jayanagar (upvotes: 2)
+    { complaintId: createdComplaints[16]._id, userId: rahul._id },
+    { complaintId: createdComplaints[16]._id, userId: voter1._id },
+    // Complaint 17 - Basavanagudi (upvotes: 2)
+    { complaintId: createdComplaints[17]._id, userId: priya._id },
+    { complaintId: createdComplaints[17]._id, userId: voter2._id },
+    // Complaint 18 - BTM Layout (upvotes: 2)
+    { complaintId: createdComplaints[18]._id, userId: rahul._id },
+    { complaintId: createdComplaints[18]._id, userId: voter3._id },
+    // Complaint 19 - Indiranagar (upvotes: 2)
+    { complaintId: createdComplaints[19]._id, userId: priya._id },
+    { complaintId: createdComplaints[19]._id, userId: voter1._id },
+    // Complaint 20 - Malleshwaram (upvotes: 2)
+    { complaintId: createdComplaints[20]._id, userId: rahul._id },
+    { complaintId: createdComplaints[20]._id, userId: voter2._id },
+    // Complaint 21 - Whitefield (upvotes: 2)
+    { complaintId: createdComplaints[21]._id, userId: priya._id },
+    { complaintId: createdComplaints[21]._id, userId: voter3._id },
   ];
   await Vote.insertMany(votes);
   console.log(`Created ${votes.length} matching Vote records.`);

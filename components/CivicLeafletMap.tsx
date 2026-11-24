@@ -102,9 +102,9 @@ export default function CivicLeafletMap({
   selectedComplaintId,
   heightClass = 'h-full',
 }: CivicLeafletMapProps) {
-  // Center of Greater Bengaluru Pilot (around Bellandur / HSR Layout)
-  const defaultCenter: [number, number] = [12.925, 77.655];
-  const defaultZoom = 13;
+  // Center of Greater Bengaluru Pilot across South, Central & East wards
+  const defaultCenter: [number, number] = [12.945, 77.635];
+  const defaultZoom = 12;
 
   // Filter complaints (strictly exclude any tickets without wardId)
   const filteredComplaints = complaints.filter((c) => {

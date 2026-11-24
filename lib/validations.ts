@@ -165,6 +165,23 @@ export const createComplaintSchema = z.object({
   confirmDistinct: z.boolean().optional().default(false),
 });
 
+export const updateComplaintSchema = z.object({
+  title: z
+    .string()
+    .trim()
+    .min(3, 'Title must be at least 3 characters')
+    .max(150, 'Title cannot exceed 150 characters')
+    .optional(),
+  description: z
+    .string()
+    .trim()
+    .min(5, 'Description must be at least 5 characters')
+    .max(2000, 'Description cannot exceed 2000 characters')
+    .optional(),
+  category: z.enum(COMPLAINT_CATEGORIES).optional(),
+  address: z.string().trim().max(300, 'Address cannot exceed 300 characters').optional(),
+});
+
 export const resolveComplaintSchema = z.object({
   lat: z.coerce.number().min(-90).max(90),
   lng: z.coerce.number().min(-180).max(180),
@@ -240,4 +257,47 @@ export const arbitrateDisputeSchema = z.object({
 
 export const rejectComplaintSchema = z.object({
   reason: z.string().trim().min(5, 'Reason for invalidation must be at least 5 characters').max(1000),
+});
+
+// Authentication & Password Policy Schemas
+export interface PasswordRuleCheck {
+  id: string;
+  label: string;
+  met: boolean;
+}
+
+export const PASSWORD_RULES = [
+  { id: 'length', label: 'At least 8 characters', test: (p: string) => p.length >= 8 && p.length <= 100 },
+  { id: 'upper', label: 'One uppercase letter (A-Z)', test: (p: string) => /[A-Z]/.test(p) },
+  { id: 'lower', label: 'One lowercase letter (a-z)', test: (p: string) => /[a-z]/.test(p) },
+  { id: 'number', label: 'One number (0-9)', test: (p: string) => /[0-9]/.test(p) },
+  { id: 'special', label: 'One special character (!@#$%^&*)', test: (p: string) => /[^A-Za-z0-9\s]/.test(p) },
+] as const;
+
+export function getPasswordRuleChecks(password: string): PasswordRuleCheck[] {
+  return PASSWORD_RULES.map((rule) => ({
+    id: rule.id,
+    label: rule.label,
+    met: rule.test(password),
+  }));
+}
+
+export const passwordSchema = z
+  .string()
+  .min(8, 'Password must be at least 8 characters')
+  .max(100, 'Password cannot exceed 100 characters')
+  .refine((p) => !/\s/.test(p), 'Password cannot contain spaces')
+  .refine((p) => /[A-Z]/.test(p), 'Password must contain at least one uppercase letter')
+  .refine((p) => /[a-z]/.test(p), 'Password must contain at least one lowercase letter')
+  .refine((p) => /[0-9]/.test(p), 'Password must contain at least one number')
+  .refine((p) => /[^A-Za-z0-9\s]/.test(p), 'Password must contain at least one special character');
+
+export const registerSchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(2, 'Full name must be at least 2 characters')
+    .max(100, 'Full name cannot exceed 100 characters'),
+  email: z.string().trim().email('Please enter a valid email address').toLowerCase(),
+  password: passwordSchema,
 });

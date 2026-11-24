@@ -20,6 +20,7 @@ export function getAuthProviders() {
         credentials: {
           email: { label: 'Email', type: 'email' },
           password: { label: 'Password', type: 'password' },
+          mode: { label: 'Mode', type: 'text' },
         },
         async authorize(credentials) {
           if (!credentials?.email) {
@@ -32,6 +33,8 @@ export function getAuthProviders() {
 
           await connectToDatabase();
           const email = credentials.email.toLowerCase().trim();
+          const isSignInMode = credentials.mode === 'signin';
+          const isDemoAccount = email.endsWith('@demo.jaago.app');
 
           let user = await User.findOne({ email });
 
@@ -71,7 +74,11 @@ export function getAuthProviders() {
           }
 
           if (!user) {
-            // If user doesn't exist yet, auto-provision user account
+            if (isSignInMode && !isDemoAccount && !isAdminEmail && !allowEntry) {
+              throw new Error('No account found for this email. Switch to Create Account to sign up.');
+            }
+
+            // Auto-provision demo/whitelisted/test accounts when invoked without registration
             // Admin role is strictly restricted to ADMIN_EMAIL or seeded admin; public signups default to citizen
             const initialRole = isAdminEmail ? 'admin' : allowEntry ? 'officer' : 'citizen';
             const hashedPassword = await bcrypt.hash(credentials.password || 'password123', 10);
@@ -84,15 +91,24 @@ export function getAuthProviders() {
               agencyId: allowEntry ? allowEntry.agencyId : undefined,
             });
           } else {
-            // If credentials password provided, verify password if user has password set
+            if (isSignInMode) {
+              if (!credentials.password) {
+                throw new Error('Password is required.');
+              }
+              if (!user.password) {
+                throw new Error('This account uses social login or has no password set.');
+              }
+            }
+
+            // Verify password if user has password set
             if (credentials.password && user.password) {
               const isValid = await bcrypt.compare(credentials.password, user.password);
               if (!isValid) {
-                if (credentials.password === 'password123' && process.env.DEMO_AUTH === 'true') {
-                  const hashedPassword = await bcrypt.hash('password123', 10);
-                  user.password = hashedPassword;
+                if (isDemoAccount && credentials.password === 'password123' && process.env.DEMO_AUTH === 'true') {
+                  user.password = await bcrypt.hash('password123', 10);
+                  await user.save();
                 } else {
-                  throw new Error('Invalid password');
+                  throw new Error('Invalid email or password');
                 }
               }
             }

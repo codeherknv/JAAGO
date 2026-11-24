@@ -33,6 +33,12 @@ const PILOT_LOCATIONS = [
   { name: 'HSR Layout (27th Main)', lat: 12.9115, lng: 77.6442, address: '27th Main Rd, Sector 1, HSR Layout, Bengaluru' },
   { name: 'Bellandur (Outer Ring Rd)', lat: 12.9304, lng: 77.6784, address: 'Outer Ring Rd, Bellandur, Bengaluru' },
   { name: 'Koramangala (80 Feet Rd)', lat: 12.9345, lng: 77.6255, address: '80 Feet Rd, 4th Block, Koramangala, Bengaluru' },
+  { name: 'Jayanagar (4th Block)', lat: 12.9299, lng: 77.5838, address: '11th Main Rd, 4th Block, Jayanagar, Bengaluru' },
+  { name: 'Basavanagudi (Bull Temple Rd)', lat: 12.9417, lng: 77.5678, address: 'Bull Temple Rd, Gandhi Bazaar, Basavanagudi, Bengaluru' },
+  { name: 'BTM Layout (2nd Stage)', lat: 12.9166, lng: 77.6101, address: '16th Main Rd, BTM 2nd Stage, Bengaluru' },
+  { name: 'Indiranagar (100 Feet Rd)', lat: 12.9784, lng: 77.6408, address: '100 Feet Rd, HAL 2nd Stage, Indiranagar, Bengaluru' },
+  { name: 'Malleshwaram (Sampige Rd)', lat: 13.0031, lng: 77.5703, address: 'Sampige Rd, 8th Cross, Malleshwaram, Bengaluru' },
+  { name: 'Whitefield (ITPL Main Rd)', lat: 12.9698, lng: 77.7499, address: 'ITPL Main Rd, Whitefield, Bengaluru' },
 ];
 
 export default function ReportPage() {

@@ -89,7 +89,7 @@ export default function AdminDashboardPage() {
 
   // Action Modals State
   const [actionComplaint, setActionComplaint] = useState<Complaint | null>(null);
-  const [actionType, setActionType] = useState<'assign' | 'resolveDispute' | 'rejectDispute' | 'invalidate' | null>(null);
+  const [actionType, setActionType] = useState<'assign' | 'resolveDispute' | 'rejectDispute' | 'invalidate' | 'delete' | null>(null);
   const [actionRemarks, setActionRemarks] = useState('');
   const [assignWardId, setAssignWardId] = useState('');
   const [assignAgencyId, setAssignAgencyId] = useState('');
@@ -318,6 +318,29 @@ export default function AdminDashboardPage() {
     }
   };
 
+  // Handle Complaint Deletion
+  const handleDeleteComplaint = async () => {
+    if (!actionComplaint) return;
+    setSubmitting(true);
+    setMessage(null);
+    try {
+      const res = await fetch(`/api/complaints/${actionComplaint._id}`, {
+        method: 'DELETE',
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to delete complaint');
+
+      setMessage({ text: 'Complaint deleted permanently', type: 'success' });
+      setActionComplaint(null);
+      setActionType(null);
+      fetchAdminData();
+    } catch (err: any) {
+      setMessage({ text: err.message, type: 'error' });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   return (
     <div className="w-full bg-kerb min-h-[calc(100vh-64px)] pb-20 md:pb-12">
       {/* Top Header Plate */}
@@ -383,7 +406,7 @@ export default function AdminDashboardPage() {
             { id: 'officers', label: 'Officer Allow-List', count: officers.length },
             { id: 'triage', label: 'Triage Queue (Unrouted)', count: triageComplaints.length, alert: triageComplaints.length > 0 },
             { id: 'disputes', label: 'Disputed Review', count: disputedComplaints.length, alert: disputedComplaints.length > 0 },
-            { id: 'invalid', label: 'Invalidate Reports', count: allComplaints.length },
+            { id: 'invalid', label: 'Invalidate & Delete', count: allComplaints.length },
           ].map((tab) => {
             const active = activeTab === tab.id;
             return (
@@ -657,14 +680,14 @@ export default function AdminDashboardPage() {
           </div>
         )}
 
-        {/* Tab 4: Invalidate Reports */}
+        {/* Tab 4: Invalidate & Delete Reports */}
         {activeTab === 'invalid' && (
           <div className="space-y-4">
             <div className="bg-white p-4 rounded-control border border-border flex items-center justify-between">
               <div>
-                <h2 className="font-heading font-bold text-sm text-asphalt">Administrative Invalidation</h2>
+                <h2 className="font-heading font-bold text-sm text-asphalt">Administrative Invalidation &amp; Deletion</h2>
                 <p className="text-xs text-asphalt-muted font-sans">
-                  Mark false, duplicate, or out-of-jurisdiction complaints as Rejected - Invalid.
+                  Mark false, duplicate, or out-of-jurisdiction complaints as Rejected - Invalid, or permanently purge records.
                 </p>
               </div>
             </div>
@@ -681,19 +704,31 @@ export default function AdminDashboardPage() {
                     <p className="text-xs text-asphalt-muted font-sans line-clamp-1">{c.address || c.wardId?.name}</p>
                   </div>
 
-                  {c.status !== 'Rejected - Invalid' && (
+                  <div className="shrink-0 flex items-center gap-2">
+                    {c.status !== 'Rejected - Invalid' && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => {
+                          setActionComplaint(c);
+                          setActionType('invalidate');
+                          setActionRemarks('');
+                        }}
+                      >
+                        Mark Invalid
+                      </Button>
+                    )}
                     <Button
                       variant="destructive"
                       size="sm"
                       onClick={() => {
                         setActionComplaint(c);
-                        setActionType('invalidate');
+                        setActionType('delete');
                       }}
-                      className="shrink-0"
                     >
-                      Mark Invalid
+                      Delete
                     </Button>
-                  )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -952,6 +987,53 @@ export default function AdminDashboardPage() {
               </Button>
             </div>
           </form>
+        )}
+      </Modal>
+
+      {/* Confirmation Dialog: Delete Complaint */}
+      <Modal
+        isOpen={Boolean(actionComplaint && actionType === 'delete')}
+        onClose={() => {
+          if (!submitting) {
+            setActionComplaint(null);
+            setActionType(null);
+          }
+        }}
+        title="Permanently Delete Complaint"
+        maxWidth="max-w-md"
+      >
+        {actionComplaint && (
+          <div className="space-y-4">
+            <p className="text-xs text-asphalt-muted leading-relaxed">
+              Are you sure you want to permanently delete{' '}
+              <strong className="text-asphalt font-semibold">&quot;{actionComplaint.title}&quot;</strong>?
+              This action will permanently purge the ticket, its votes, and its notification history from the database. This action cannot be reversed.
+            </p>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-border">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  setActionComplaint(null);
+                  setActionType(null);
+                }}
+                disabled={submitting}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                size="sm"
+                onClick={handleDeleteComplaint}
+                disabled={submitting}
+              >
+                {submitting ? 'Deleting...' : 'Confirm Permanent Deletion'}
+              </Button>
+            </div>
+          </div>
         )}
       </Modal>
 

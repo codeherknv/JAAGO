@@ -153,10 +153,14 @@ export async function POST(req: NextRequest) {
     });
 
     if (!matchedWard) {
+      const activeWards = await Ward.find({}, 'name code').sort({ name: 1 }).lean();
+      const wardSummary =
+        activeWards.length > 0
+          ? activeWards.map((w) => `${w.name} (${w.code})`).join(', ')
+          : 'Bellandur (W-150), HSR Layout (W-174), and Koramangala (W-151)';
       return NextResponse.json(
         {
-          error:
-            'Location outside pilot boundaries. Jaago pilot currently covers Bellandur (W-150), HSR Layout (W-174), and Koramangala (W-151).',
+          error: `Location outside pilot boundaries. Jaago currently covers: ${wardSummary}.`,
         },
         { status: 422 }
       );

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { Plus, RefreshCw, Filter, Layers, X, ChevronRight } from 'lucide-react';
@@ -41,24 +41,61 @@ export default function ExplorePage() {
   const [loading, setLoading] = useState(true);
   const [selectedComplaint, setSelectedComplaint] = useState<any | null>(null);
   const [showLegend, setShowLegend] = useState(false);
+  const pageRef = useRef<HTMLDivElement>(null);
+  const filterBarRef = useRef<HTMLDivElement>(null);
+  const [zoomTopOffset, setZoomTopOffset] = useState<number>(72);
+
+  useEffect(() => {
+    const updateZoomOffset = () => {
+      if (!filterBarRef.current || !pageRef.current) return;
+      const containerRect = pageRef.current.getBoundingClientRect();
+      const filterRect = filterBarRef.current.getBoundingClientRect();
+      const bottomRelative = Math.ceil(filterRect.bottom - containerRect.top);
+      if (bottomRelative > 0) {
+        setZoomTopOffset(bottomRelative + 2);
+      }
+    };
+
+    updateZoomOffset();
+    const observer =
+      typeof ResizeObserver !== 'undefined' ? new ResizeObserver(updateZoomOffset) : null;
+    if (observer && filterBarRef.current) {
+      observer.observe(filterBarRef.current);
+    }
+    window.addEventListener('resize', updateZoomOffset);
+
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', updateZoomOffset);
+    };
+  }, []);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/complaints?limit=150');
+      const [res, wardsRes] = await Promise.all([
+        fetch('/api/complaints?limit=150'),
+        fetch('/api/wards'),
+      ]);
       const data = await res.json();
+      const wardsData = wardsRes.ok ? await wardsRes.json().catch(() => ({})) : {};
+
       // Ensure complaints with no wardId are excluded from the public explore map
       const validComplaints = (data.complaints || []).filter(
         (c: any) => c.wardId && (c.wardId._id || typeof c.wardId === 'string')
       );
       setComplaints(validComplaints);
 
-      // Extract unique wards
-      const map = new Map();
-      validComplaints.forEach((c: any) => {
-        if (c.wardId && c.wardId._id) map.set(c.wardId._id, c.wardId);
-      });
-      setWards(Array.from(map.values()));
+      if (Array.isArray(wardsData.wards) && wardsData.wards.length > 0) {
+        setWards(wardsData.wards);
+      } else {
+        // Fallback: extract unique wards from complaints
+        const map = new Map();
+        validComplaints.forEach((c: any) => {
+          if (c.wardId && c.wardId._id) map.set(c.wardId._id, c.wardId);
+        });
+        setWards(Array.from(map.values()));
+      }
     } catch (err) {
       console.error('Failed to load explore data:', err);
     } finally {
@@ -80,9 +117,12 @@ export default function ExplorePage() {
   };
 
   return (
-    <div className="relative w-full h-[calc(100vh-64px)] pb-16 md:pb-0 overflow-hidden bg-kerb">
+    <div ref={pageRef} className="relative w-full h-[calc(100vh-64px)] pb-16 md:pb-0 overflow-hidden bg-kerb">
       {/* Full-Screen GIS Leaflet Map */}
-      <div className="absolute inset-0 w-full h-full">
+      <div
+        className="absolute inset-0 w-full h-full explore-map-host"
+        style={{ '--explore-zoom-top': `${zoomTopOffset}px` } as React.CSSProperties}
+      >
         <CivicLeafletMap
           complaints={complaints}
           wards={wards}
@@ -97,7 +137,10 @@ export default function ExplorePage() {
       <div className="absolute top-3 inset-x-3 md:top-4 md:inset-x-6 z-[1000] pointer-events-none">
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
           {/* Category & Ward Filter Bar */}
-          <div className="flex flex-wrap items-center gap-1.5 p-1.5 bg-white/95 backdrop-blur-sm rounded-control border border-border shadow-sheet pointer-events-auto overflow-x-auto max-w-full">
+          <div
+            ref={filterBarRef}
+            className="flex flex-wrap items-center gap-1.5 p-1.5 bg-white/95 backdrop-blur-sm rounded-control border border-border shadow-sheet pointer-events-auto overflow-x-auto max-w-full"
+          >
             {/* Category Chips */}
             {CATEGORIES.map((cat) => {
               const active = selectedCategory === cat;
